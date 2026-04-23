@@ -39,19 +39,24 @@ USERS_FILE = "users.json"
 CHATS_FILE = "ai_chats.json"
 MESSAGES_FILE = "user_messages.json"
 
+
 def load_data(file, default):
     if not os.path.exists(file):
         with open(file, "w") as f: json.dump(default, f)
         return default
     with open(file, "r") as f:
-        try: return json.load(f)
-        except: return default
+        try:
+            return json.load(f)
+        except:
+            return default
+
 
 def save_data(file, data):
     with open(file, "w") as f: json.dump(data, f)
 
-# Initialize and Auto-Upgrade Databases
+
 db_users = load_data(USERS_FILE, {})
+# Auto-Upgrade user database structure
 for u in db_users:
     if isinstance(db_users[u], str):
         db_users[u] = {"password": db_users[u], "friends": [], "requests": []}
@@ -71,7 +76,9 @@ if "processing" not in st.session_state: st.session_state.processing = False
 
 # --- 4. WELCOME & LOGIN ---
 if not st.session_state.logged_in:
-    st.markdown("<h1 style='text-align: center; color: #00d4ff; text-shadow: 2px 2px 10px #00d4ff;'>🚀 LAKSHMEEYAM AI</h1>", unsafe_allow_html=True)
+    st.markdown(
+        "<h1 style='text-align: center; color: #00d4ff; text-shadow: 2px 2px 10px #00d4ff;'>🚀 LAKSHMEEYAM AI</h1>",
+        unsafe_allow_html=True)
     col_l, _, col_r = st.columns([1.5, 0.1, 1])
     with col_l:
         st.markdown("""
@@ -101,7 +108,8 @@ if not st.session_state.logged_in:
                     if u_in not in db_chats: db_chats[u_in] = {"New Chat": []}
                     save_data(CHATS_FILE, db_chats)
                     st.rerun()
-                else: st.error("❌ Invalid Username or Password")
+                else:
+                    st.error("❌ Invalid Username or Password")
         with t2:
             nu = st.text_input("New Username")
             np = st.text_input("New Password", type="password")
@@ -129,6 +137,183 @@ with st.sidebar:
         st.rerun()
 
 # --- 6. PAGES ---
+
+# DASHBOARD
+if st.session_state.current_page == "Dashboard":
+    st.title("📱 Tech Dashboard")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.markdown("<div class='main-box'><h3>🤖 AI Lab</h3><p>Chat with Groq Llama</p></div>", unsafe_allow_html=True)
+        if st.button("Open AI", use_container_width=True): st.session_state.current_page = "AI Chat"; st.rerun()
+    with c2:
+        st.markdown("<div class='main-box'><h3>💬 Messaging</h3><p>Inbox & Chat</p></div>", unsafe_allow_html=True)
+        if st.button("Open Messages", use_container_width=True): st.session_state.current_page = "Messages"; st.rerun()
+    with c3:
+        st.markdown("<div class='main-box'><h3>🌤️ SkyView</h3><p>Live Weather</p></div>", unsafe_allow_html=True)
+        if st.button("Open Weather", use_container_width=True): st.session_state.current_page = "Weather"; st.rerun()
+
+# AI CHAT
+elif st.session_state.current_page == "AI Chat":
+    st.title("🤖 AI Lab")
+    client = Groq(api_key="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")
+
+    # Ensure user entry exists
+    if st.session_state.user not in db_chats:
+        db_chats[st.session_state.user] = {"New Chat": []}
+
+    my_h = db_chats[st.session_state.user]
+
+    with st.sidebar:
+        st.write("---")
+        if st.button("➕ New Session", use_container_width=True):
+            # Create/Reset the "New Chat" entry specifically
+            my_h["New Chat"] = []
+            st.session_state.active_chat = "New Chat"
+            save_data(CHATS_FILE, db_chats)
+            st.rerun()
+
+        st.write("#### History")
+        # List all chats except the current "New Chat" so it stays clean
+        chat_titles = list(my_h.keys())
+        for t in reversed(chat_titles):
+            if st.button(f"💬 {t}", use_container_width=True, key=f"chat_{t}"):
+                st.session_state.active_chat = t
+                st.rerun()
+
+    # Load messages for the current active chat
+    msgs = my_h.get(st.session_state.active_chat, [])
+
+    # Display the conversation
+    for m in msgs:
+        with st.chat_message(m["role"]): st.write(m["content"])
+
+    # Chat Input
+    p = st.chat_input("Ask Lakshmeeyam AI anything...")
+    if p:
+        st.session_state.processing = True
+        msgs.append({"role": "user", "content": p})
+        # Lock the message into the specific active chat key
+        my_h[st.session_state.active_chat] = msgs
+        save_data(CHATS_FILE, db_chats)
+        st.rerun()
+
+    # AI Processing Logic
+    if st.session_state.processing:
+        with st.chat_message("assistant"):
+            # 1. Generate the standard response
+            sys_prompt = {"role": "system",
+                          "content": "You are Lakshmeeyam AI, created by Sreenand. Be helpful and smart."}
+            res = client.chat.completions.create(model="llama-3.1-8b-instant", messages=[sys_prompt] + msgs)
+            ans = res.choices[0].message.content
+            msgs.append({"role": "assistant", "content": ans})
+
+            # 2. RENAME LOGIC: Only trigger if we are currently in "New Chat"
+            if st.session_state.active_chat == "New Chat" and len(msgs) >= 2:
+                rename_req = [
+                    {"role": "system", "content": "Summarize user's topic in 2 words. No punctuation."},
+                    {"role": "user", "content": msgs[0]['content']}
+                ]
+                try:
+                    rn_res = client.chat.completions.create(model="llama-3.1-8b-instant", messages=rename_req)
+                    new_title = rn_res.choices[0].message.content.strip()
+
+                    # If title already exists, add a small timestamp to keep it unique
+                    if new_title in my_h:
+                        new_title += f" ({datetime.now().strftime('%H:%M')})"
+
+                    # Shift the data from "New Chat" to the new specific title
+                    my_h[new_title] = my_h.pop("New Chat")
+                    # Update session state so the view stays on the newly named chat
+                    st.session_state.active_chat = new_title
+                except:
+                    pass  # If renaming fails, it just stays "New Chat"
+
+            save_data(CHATS_FILE, db_chats)
+            st.session_state.processing = False
+            st.rerun()
+
+# MESSAGING
+elif st.session_state.current_page == "Messages":
+    st.title("📫 Communication Center")
+    t_chat, t_inbox = st.tabs(["💬 Direct Messages", "📥 Inbox & Requests"])
+    u_data = db_users[st.session_state.user]
+
+    with t_inbox:
+        st.subheader("Add Friend")
+        target = st.text_input("Enter Username")
+        if st.button("Send Friend Request"):
+            if target in db_users and target != st.session_state.user:
+                if st.session_state.user not in db_users[target]["requests"]:
+                    db_users[target]["requests"].append(st.session_state.user)
+                    save_data(USERS_FILE, db_users)
+                    st.success(f"Request sent to {target}!")
+                else:
+                    st.warning("Request already pending.")
+            else:
+                st.error("User not found.")
+
+        st.write("---")
+        st.subheader("Pending Requests")
+        for r in u_data["requests"]:
+            cl, ca, cd = st.columns([2, 1, 1])
+            cl.write(f"**{r}** wants to be friends.")
+            if ca.button("Accept", key=f"acc_{r}"):
+                u_data["friends"].append(r)
+                db_users[r]["friends"].append(st.session_state.user)
+                u_data["requests"].remove(r)
+                save_data(USERS_FILE, db_users);
+                st.rerun()
+            if cd.button("Decline", key=f"dec_{r}"):
+                u_data["requests"].remove(r);
+                save_data(USERS_FILE, db_users);
+                st.rerun()
+
+    with t_chat:
+        friends = u_data["friends"]
+        if not friends:
+            st.info("No friends yet. Use 'Inbox' to add some!")
+        else:
+            fl, cl = st.columns([1, 2])
+            with fl:
+                for f in friends:
+                    if st.button(f"👤 {f}", use_container_width=True): st.session_state.msg_target = f
+            with cl:
+                dest = st.session_state.get("msg_target")
+                if dest:
+                    st.write(f"### Chat with {dest}")
+                    cid = "_".join(sorted([st.session_state.user, dest]))
+                    if cid not in db_messages: db_messages[cid] = []
+                    for m in db_messages[cid]:
+                        role = "user" if m["sender"] == st.session_state.user else "assistant"
+                        with st.chat_message(role): st.write(f"**{m['sender']}**: {m['text']}")
+                    txt = st.chat_input(f"Send message to {dest}...")
+                    if txt:
+                        db_messages[cid].append({"sender": st.session_state.user, "text": txt})
+                        save_data(MESSAGES_FILE, db_messages);
+                        st.rerun()
+                else:
+                    st.info("Select a friend to start chatting.")
+
+# WEATHER
+elif st.session_state.current_page == "Weather":
+    st.title("🌤️ SkyView Weather")
+    loc = st.text_input("Enter City or Village:", "Pallikal")
+    if st.button("Get Weather"):
+        try:
+            g = requests.get(f"https://geocoding-api.open-meteo.com/v1/search?name={loc}&count=1").json()
+            if "results" in g:
+                r = g["results"][0]
+                w = requests.get(
+                    f"https://api.open-meteo.com/v1/forecast?latitude={r['latitude']}&longitude={r['longitude']}&current_weather=true").json()
+                curr = w["current_weather"]
+                st.success(f"Weather for {loc.title()}, {r['country']}")
+                w1, w2 = st.columns(2)
+                w1.metric("Temperature", f"{curr['temperature']}°C")
+                w2.metric("Wind Speed", f"{curr['windspeed']} km/h")
+            else:
+                st.error("Location not found.")
+        except:
+            st.error("Connection error.")
 
 # DASHBOARD
 if st.session_state.current_page == "Dashboard":
