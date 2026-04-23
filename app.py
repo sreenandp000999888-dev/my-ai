@@ -101,7 +101,7 @@ if not st.session_state.logged_in:
         """, unsafe_allow_html=True)
     with col_r:
         st.markdown("<div class='main-box'>", unsafe_allow_html=True)
-        st.subheader("🔐 Access Portal")
+        st.subheader("🔐 Access")
         t1, t2 = st.tabs(["Login", "Sign Up"])
         with t1:
             u_in = st.text_input("Username")
@@ -138,13 +138,13 @@ if not st.session_state.logged_in:
 # --- 5. SIDEBAR NAVIGATION ---
 with st.sidebar:
     st.markdown(f"<h2 style='color:#00d4ff;'>Welcome, {st.session_state.user}</h2>", unsafe_allow_html=True)
-    if st.button("🏠 Dashboard", use_container_width=True): st.session_state.current_page = "Dashboard"
-    if st.button("🤖 AI Lab", use_container_width=True): st.session_state.current_page = "AI Chat"
+    if st.button("🏠 home", use_container_width=True): st.session_state.current_page = "Dashboard"
+    if st.button("🤖 AI", use_container_width=True): st.session_state.current_page = "AI Chat"
     if st.button("💬 Messaging", use_container_width=True): st.session_state.current_page = "Messages"
     if st.button("🌤️ Weather", use_container_width=True): st.session_state.current_page = "Weather"
     st.write("---")
 
-    if st.button("🚪 Logout", use_container_width=True, key="sidebar_logout"):
+    if st.button("🔐 Logout", use_container_width=True, key="sidebar_logout"):
         # Clear token from DB on logout
         if st.session_state.user in db_users:
             db_users[st.session_state.user]["token"] = ""
@@ -156,8 +156,8 @@ with st.sidebar:
 # --- 6. PAGES ---
 
 # DASHBOARD
-if st.session_state.current_page == "Dashboard":
-    st.title("📱 Tech Dashboard")
+if st.session_state.current_page == "home":
+    st.title("🏠 home")
     c1, c2, c3 = st.columns(3)
     with c1:
         st.markdown("<div class='main-box'><h3>🤖 AI Lab</h3><p>Chat with Groq Llama</p></div>", unsafe_allow_html=True)
@@ -177,7 +177,7 @@ if st.session_state.current_page == "Dashboard":
 
 # AI CHAT
 elif st.session_state.current_page == "AI Chat":
-    st.title("🤖 AI Lab")
+    st.title("🤖 grok AI")
     client = Groq(api_key="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")
 
     if st.session_state.user not in db_chats:
@@ -203,7 +203,7 @@ elif st.session_state.current_page == "AI Chat":
     for m in msgs:
         with st.chat_message(m["role"]): st.write(m["content"])
 
-    p = st.chat_input("Ask Lakshmeeyam AI anything...")
+    p = st.chat_input("Ask AI anything...")
     if p:
         st.session_state.processing = True
         msgs.append({"role": "user", "content": p})
@@ -236,7 +236,7 @@ elif st.session_state.current_page == "AI Chat":
 
 # MESSAGING
 elif st.session_state.current_page == "Messages":
-    st.title("📫 Communication Center")
+    st.title("📫 Communication")
     t_chat, t_inbox = st.tabs(["💬 DM", "📥 Inbox & Requests"])
     u_data = db_users.get(st.session_state.user, {})
 
@@ -293,8 +293,8 @@ elif st.session_state.current_page == "Messages":
 
 # WEATHER
 elif st.session_state.current_page == "Weather":
-    st.title("🌤️ SkyView Weather")
-    loc = st.text_input("Enter City:", "Pallikal")
+    st.title("🌤️ SkyView Weather not ready ")
+    loc = st.text_input("Enter City:", "")
     if st.button("Get Weather", key="btn_get_weather"):
         try:
             g = requests.get(f"https://geocoding-api.open-meteo.com/v1/search?name={loc}&count=1").json()
