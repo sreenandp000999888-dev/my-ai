@@ -80,7 +80,7 @@ if not st.session_state.logged_in:
             <p>At 14 years old, Sreenand created this platform as a hobby to integrate AI tools with a social network.</p>
             <hr style='border-color: #333;'>
             <ul>
-                <li><b>Custom AI:</b> Powered by Groq Llama 3.1</li>
+                <li><b>Custom AI:</b> Powered by Grok Llama 3.1</li>
                 <li><b>Auto-Save:</b> Stays logged in via URL parameters</li>
                 <li><b>Friend System:</b> Messaging in real-time</li>
             </ul>
@@ -207,7 +207,7 @@ elif st.session_state.current_page == "AI Chat":
 # MESSAGING
 elif st.session_state.current_page == "Messages":
     st.title("📫 Communication Center")
-    t_chat, t_inbox = st.tabs(["💬 Direct Messages", "📥 Inbox & Requests"])
+    t_chat, t_inbox = st.tabs(["💬 DM", "📥 Inbox & Requests"])
     u_data = db_users.get(st.session_state.user, {})
 
     with t_inbox:
@@ -257,8 +257,8 @@ elif st.session_state.current_page == "Messages":
 
 # WEATHER
 elif st.session_state.current_page == "Weather":
-    st.title("🌤️ SkyView Weather")
-    loc = st.text_input("Enter City:", "Pallikal")
+    st.title("🌤️ SkyView Weather not ready")
+    loc = st.text_input("Enter City:", "")
     if st.button("Get Weather", key="btn_get_weather"):
         try:
             g = requests.get(f"https://geocoding-api.open-meteo.com/v1/search?name={loc}&count=1").json()
