@@ -1,11 +1,11 @@
 import streamlit as st
 from groq import Groq
 import json
-import os
 import secrets
 from datetime import datetime
 import requests
 import hashlib
+from supabase import create_client, Client
 
 # --- 1. PAGE CONFIG & FUTURISTIC STYLING ---
 st.set_page_config(page_title="Lakshmeeyam AI", page_icon="🤖", layout="wide")
@@ -35,41 +35,37 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. DATABASE HELPERS ---
-USERS_FILE = "users.json"
-CHATS_FILE = "ai_chats.json"
-MESSAGES_FILE = "user_messages.json"
+# --- 2. DATABASE HELPERS (SUPABASE) ---
+url = st.secrets["SUPABASE_URL"]
+key = st.secrets["SUPABASE_KEY"]
+supabase: Client = create_client(url, key)
 
 def hash_password(password):
     return hashlib.sha256(str.encode(password)).hexdigest()
 
-def load_data(file, default):
-    if not os.path.exists(file):
-        with open(file, "w") as f: json.dump(default, f)
-        return default
-    with open(file, "r") as f:
-        try: return json.load(f)
-        except: return default
+def get_user(username):
+    res = supabase.table("users").select("*").eq("username", username).execute()
+    return res.data[0] if res.data else None
 
-def save_data(file, data):
-    with open(file, "w") as f: json.dump(data, f)
-
-db_users = load_data(USERS_FILE, {})
-db_chats = load_data(CHATS_FILE, {})
-db_messages = load_data(MESSAGES_FILE, {})
+def save_user(username, data):
+    supabase.table("users").upsert({
+        "username": username,
+        "password": data["password"],
+        "token": data.get("token", ""),
+        "friends": data.get("friends", []),
+        "requests": data.get("requests", [])
+    }).execute()
 
 # --- 3. PERSISTENT LOGIN LOGIC ---
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
     url_token = st.query_params.get("token")
     if url_token:
-        for username, data in db_users.items():
-            if data.get("token") == url_token:
-                st.session_state.logged_in = True
-                st.session_state.user = username
-                break
+        res = supabase.table("users").select("*").eq("token", url_token).execute()
+        if res.data:
+            st.session_state.logged_in = True
+            st.session_state.user = res.data[0]["username"]
 
-# FIXED: Ensure default page matches the logic below
 if "current_page" not in st.session_state: st.session_state.current_page = "home"
 if "active_chat" not in st.session_state: st.session_state.active_chat = "New Chat"
 if "processing" not in st.session_state: st.session_state.processing = False
@@ -87,7 +83,7 @@ if not st.session_state.logged_in:
             <hr style='border-color: #333;'>
             <ul>
                 <li><b>Custom AI:</b> Powered by Groq Llama 3.1</li>
-                <li><b>Token Persistence:</b> Securely stays logged in on refresh</li>
+                <li><b>Cloud Storage:</b> Powered by Supabase DB</li>
                 <li><b>Friend System:</b> Messaging in real-time</li>
             </ul>
         </div>
@@ -100,34 +96,32 @@ if not st.session_state.logged_in:
             u_in = st.text_input("Username")
             p_in = st.text_input("Password", type="password")
             if st.button("Log In", use_container_width=True):
-                if u_in in db_users:
-                    stored_pw = db_users[u_in]["password"]
-                    if stored_pw == p_in or stored_pw == hash_password(p_in):
+                user_data = get_user(u_in)
+                if user_data:
+                    if user_data["password"] == p_in or user_data["password"] == hash_password(p_in):
                         new_token = secrets.token_hex(16)
-                        db_users[u_in]["token"] = new_token
-                        save_data(USERS_FILE, db_users)
+                        user_data["token"] = new_token
+                        save_user(u_in, user_data)
                         st.session_state.logged_in = True
                         st.session_state.user = u_in
                         st.query_params["token"] = new_token
-                        if u_in not in db_chats: db_chats[u_in] = {"New Chat": []}
-                        save_data(CHATS_FILE, db_chats)
                         st.rerun()
                 st.error("❌ Invalid Username or Password")
         with t2:
             nu = st.text_input("New Username")
             np = st.text_input("New Password", type="password")
             if st.button("Create Account", use_container_width=True):
-                if nu and np and nu not in db_users:
-                    db_users[nu] = {"password": hash_password(np), "friends": [], "requests": [], "token": ""}
-                    save_data(USERS_FILE, db_users)
+                if nu and np and not get_user(nu):
+                    new_user = {"password": hash_password(np), "friends": [], "requests": [], "token": ""}
+                    save_user(nu, new_user)
                     st.success("Account Ready! Please Login.")
+                else: st.error("User exists or fields empty.")
         st.markdown("</div>", unsafe_allow_html=True)
     st.stop()
 
 # --- 5. SIDEBAR NAVIGATION ---
 with st.sidebar:
     st.markdown(f"<h2 style='color:#00d4ff;'>Welcome, {st.session_state.user}</h2>", unsafe_allow_html=True)
-    # FIXED: Changed "Dashboard" to "home" to match logic below
     if st.button("🏠 home", use_container_width=True): 
         st.session_state.current_page = "home"
         st.rerun()
@@ -141,117 +135,115 @@ with st.sidebar:
         st.session_state.current_page = "Weather"
         st.rerun()
     st.write("---")
-    if st.button("🔐 Logout", use_container_width=True, key="sidebar_logout"):
-        if st.session_state.user in db_users:
-            db_users[st.session_state.user]["token"] = ""
-            save_data(USERS_FILE, db_users)
+    if st.button("🔐 Logout", use_container_width=True):
+        user_data = get_user(st.session_state.user)
+        if user_data:
+            user_data["token"] = ""
+            save_user(st.session_state.user, user_data)
         st.session_state.logged_in = False
         st.query_params.clear()
         st.rerun()
 
 # --- 6. PAGES ---
 
-# HOME PAGE
 if st.session_state.current_page == "home":
     st.title("🏠 home")
     c1, c2, c3 = st.columns(3)
     with c1:
-        st.markdown("<div class='main-box'><h3>🤖 AI Lab</h3><p>Chat with Groq Llama</p></div>", unsafe_allow_html=True)
-        if st.button("Open AI", use_container_width=True, key="dash_ai"):
-            st.session_state.current_page = "AI Chat"
-            st.rerun()
+        st.markdown("<div class='main-box'><h3>🤖 AI Lab</h3><p>Chat with Llama 3.1</p></div>", unsafe_allow_html=True)
+        if st.button("Open AI", use_container_width=True): st.session_state.current_page = "AI Chat"; st.rerun()
     with c2:
         st.markdown("<div class='main-box'><h3>💬 Messaging</h3><p>Inbox & Chat</p></div>", unsafe_allow_html=True)
-        if st.button("Open Messages", use_container_width=True, key="dash_msg"):
-            st.session_state.current_page = "Messages"
-            st.rerun()
+        if st.button("Open Messages", use_container_width=True): st.session_state.current_page = "Messages"; st.rerun()
     with c3:
         st.markdown("<div class='main-box'><h3>🌤️ SkyView</h3><p>Live Weather</p></div>", unsafe_allow_html=True)
-        if st.button("Open Weather", use_container_width=True, key="dash_weather"):
-            st.session_state.current_page = "Weather"
-            st.rerun()
+        if st.button("Open Weather", use_container_width=True): st.session_state.current_page = "Weather"; st.rerun()
 
-# AI CHAT
 elif st.session_state.current_page == "AI Chat":
-    st.title("🤖 grok AI")
+    st.title("🤖 Lakshmeeyam AI")
     client = Groq(api_key=st.secrets["GROQ_API_KEY"])
-    if st.session_state.user not in db_chats:
-        db_chats[st.session_state.user] = {"New Chat": []}
-    my_h = db_chats[st.session_state.user]
+    
+    # Load history from Supabase
+    chat_res = supabase.table("ai_chats").select("*").eq("username", st.session_state.user).execute()
+    user_history = {row['chat_title']: row['messages'] for row in chat_res.data} if chat_res.data else {"New Chat": []}
 
     with st.sidebar:
         st.write("---")
-        if st.button("➕ New Session", use_container_width=True, key="chat_new_session"):
+        if st.button("➕ New Session", use_container_width=True):
             st.session_state.active_chat = "New Chat"
-            my_h["New Chat"] = []
-            save_data(CHATS_FILE, db_chats)
             st.rerun()
         st.write("#### History")
-        for t in reversed(list(my_h.keys())):
-            if st.button(f"💬 {t}", use_container_width=True, key=f"hist_{t}"):
-                st.session_state.active_chat = t
+        for title in reversed(list(user_history.keys())):
+            if st.button(f"💬 {title}", use_container_width=True):
+                st.session_state.active_chat = title
                 st.rerun()
 
-    msgs = my_h.get(st.session_state.active_chat, [])
-    for m in msgs:
+    current_msgs = user_history.get(st.session_state.active_chat, [])
+    for m in current_msgs:
         with st.chat_message(m["role"]): st.write(m["content"])
 
-    p = st.chat_input("Ask AI anything...")
+    p = st.chat_input("Ask AI...")
     if p:
+        current_msgs.append({"role": "user", "content": p})
         st.session_state.processing = True
-        msgs.append({"role": "user", "content": p})
-        my_h[st.session_state.active_chat] = msgs
-        save_data(CHATS_FILE, db_chats)
+        # Save immediately
+        supabase.table("ai_chats").upsert({"username": st.session_state.user, "chat_title": st.session_state.active_chat, "messages": current_msgs}, on_conflict="username,chat_title").execute()
         st.rerun()
 
     if st.session_state.processing:
         with st.chat_message("assistant"):
-            sys = {"role": "system", "content": "You are Lakshmeeyam AI, created by Sreenand. Be helpful and smart."}
-            res = client.chat.completions.create(model="llama-3.1-8b-instant", messages=[sys] + msgs)
+            sys = {"role": "system", "content": "You are Lakshmeeyam AI, created by Sreenand. Be helpful."}
+            res = client.chat.completions.create(model="llama-3.1-8b-instant", messages=[sys] + current_msgs)
             ans = res.choices[0].message.content
-            msgs.append({"role": "assistant", "content": ans})
-            if st.session_state.active_chat == "New Chat" and len(msgs) >= 2:
-                rename_req = [{"role": "system", "content": "Title this topic in 2 words. No dots."}, {"role": "user", "content": msgs[0]['content']}]
-                try:
-                    rn_res = client.chat.completions.create(model="llama-3.1-8b-instant", messages=rename_req)
-                    new_title = rn_res.choices[0].message.content.strip()
-                    if new_title in my_h: new_title += f" ({datetime.now().strftime('%H:%M')})"
-                    my_h[new_title] = my_h.pop("New Chat")
-                    st.session_state.active_chat = new_title
-                except: pass
-            save_data(CHATS_FILE, db_chats)
+            current_msgs.append({"role": "assistant", "content": ans})
+            
+            # Title handling
+            active_title = st.session_state.active_chat
+            if active_title == "New Chat" and len(current_msgs) >= 2:
+                rn_res = client.chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role": "system", "content": "Title this in 2 words."}, {"role": "user", "content": current_msgs[0]['content']}])
+                active_title = rn_res.choices[0].message.content.strip()
+                # Delete old "New Chat" entry and save new one
+                supabase.table("ai_chats").delete().eq("username", st.session_state.user).eq("chat_title", "New Chat").execute()
+                st.session_state.active_chat = active_title
+
+            supabase.table("ai_chats").upsert({"username": st.session_state.user, "chat_title": active_title, "messages": current_msgs}, on_conflict="username,chat_title").execute()
             st.session_state.processing = False
             st.rerun()
 
-# MESSAGING
 elif st.session_state.current_page == "Messages":
     st.title("📫 Communication")
     t_chat, t_inbox = st.tabs(["💬 DM", "📥 Inbox & Requests"])
-    u_data = db_users.get(st.session_state.user, {})
+    u_data = get_user(st.session_state.user)
 
     with t_inbox:
         st.subheader("Add Friend")
         target = st.text_input("Enter Username")
-        if st.button("Send Friend Request"):
-            if target in db_users and target != st.session_state.user:
-                if st.session_state.user not in db_users[target].get("requests", []):
-                    db_users[target].setdefault("requests", []).append(st.session_state.user)
-                    save_data(USERS_FILE, db_users)
-                    st.success(f"Request sent to {target}!")
+        if st.button("Send Request"):
+            target_data = get_user(target)
+            if target_data and target != st.session_state.user:
+                reqs = target_data.get("requests", [])
+                if st.session_state.user not in reqs:
+                    reqs.append(st.session_state.user)
+                    target_data["requests"] = reqs
+                    save_user(target, target_data)
+                    st.success("Sent!")
             else: st.error("User not found.")
+        
         st.write("---")
         for r in u_data.get("requests", []):
             cl, ca, cd = st.columns([2, 1, 1])
             cl.write(f"**{r}** wants to be friends.")
             if ca.button("Accept", key=f"acc_{r}"):
-                u_data.setdefault("friends", []).append(r)
-                db_users[r].setdefault("friends", []).append(st.session_state.user)
+                u_data["friends"].append(r)
                 u_data["requests"].remove(r)
-                save_data(USERS_FILE, db_users)
+                save_user(st.session_state.user, u_data)
+                r_data = get_user(r)
+                r_data["friends"].append(st.session_state.user)
+                save_user(r, r_data)
                 st.rerun()
             if cd.button("Decline", key=f"dec_{r}"):
                 u_data["requests"].remove(r)
-                save_data(USERS_FILE, db_users)
+                save_user(st.session_state.user, u_data)
                 st.rerun()
 
     with t_chat:
@@ -261,35 +253,32 @@ elif st.session_state.current_page == "Messages":
             fl, cl = st.columns([1, 2])
             with fl:
                 for f in friends:
-                    if st.button(f"👤 {f}", use_container_width=True, key=f"friend_btn_{f}"):
-                        st.session_state.msg_target = f
+                    if st.button(f"👤 {f}", use_container_width=True): st.session_state.msg_target = f
             with cl:
                 dest = st.session_state.get("msg_target")
                 if dest:
                     cid = "_".join(sorted([st.session_state.user, dest]))
-                    if cid not in db_messages: db_messages[cid] = []
-                    for m in db_messages[cid]:
+                    res = supabase.table("user_messages").select("*").eq("chat_id", cid).order("created_at").execute()
+                    for m in res.data:
                         role = "user" if m["sender"] == st.session_state.user else "assistant"
                         with st.chat_message(role): st.write(f"**{m['sender']}**: {m['text']}")
-                    txt = st.chat_input(f"Send to {dest}...")
+                    
+                    txt = st.chat_input(f"Message {dest}...")
                     if txt:
-                        db_messages[cid].append({"sender": st.session_state.user, "text": txt})
-                        save_data(MESSAGES_FILE, db_messages)
+                        supabase.table("user_messages").insert({"chat_id": cid, "sender": st.session_state.user, "text": txt}).execute()
                         st.rerun()
 
-# WEATHER
 elif st.session_state.current_page == "Weather":
     st.title("🌤️ SkyView Weather")
-    loc = st.text_input("Enter City:", "")
-    if st.button("Get Weather", key="btn_get_weather"):
+    loc = st.text_input("Enter City:")
+    if st.button("Get Weather"):
         try:
             g = requests.get(f"https://geocoding-api.open-meteo.com/v1/search?name={loc}&count=1").json()
             if "results" in g:
                 r = g["results"][0]
                 w = requests.get(f"https://api.open-meteo.com/v1/forecast?latitude={r['latitude']}&longitude={r['longitude']}&current_weather=true").json()
                 curr = w["current_weather"]
-                st.success(f"Weather for {loc.title()}")
                 w1, w2 = st.columns(2)
                 w1.metric("Temperature", f"{curr['temperature']}°C")
                 w2.metric("Wind Speed", f"{curr['windspeed']} km/h")
-        except: st.error("Error connecting to weather service.")
+        except: st.error("Connection error.")
