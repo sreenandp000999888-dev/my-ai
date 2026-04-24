@@ -12,7 +12,7 @@ st.set_page_config(page_title="Lakshmeeyam AI", page_icon="🤖", layout="wide")
 
 # ⚠️ GOOGLE SEARCH CONSOLE VERIFICATION: 
 # Replace "YOUR_HTML_TAG_CONTENT_HERE" with the actual code Google gives you for the HTML Tag method.
-st.markdown('<meta name="google-site-verification" content="google-site-verification=DmWLc_BbgGyevRBWmBNOqCWf2zc5RMxIJJoSm8xaGo0" />', unsafe_allow_html=True)
+st.markdown('<meta name="google-site-verification=DmWLc_BbgGyevRBWmBNOqCWf2zc5RMxIJJoSm8xaGo0" />', unsafe_allow_html=True)
 
 st.markdown("""
     <style>
