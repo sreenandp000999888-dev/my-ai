@@ -174,7 +174,7 @@ if st.session_state.current_page == "home":
 # AI CHAT
 elif st.session_state.current_page == "AI Chat":
     st.title("🤖 grok AI")
-    client = Groq(api_key="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")
+    client = Groq(api_key=st.secrets["GROQ_API_KEY"])
     if st.session_state.user not in db_chats:
         db_chats[st.session_state.user] = {"New Chat": []}
     my_h = db_chats[st.session_state.user]
