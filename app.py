@@ -4,7 +4,6 @@ import secrets
 import hashlib
 import requests
 from datetime import datetime
-from supabase import create_client, Client
 
 # ─────────────────────────────────────────
 # 1. PAGE CONFIG & STYLING
