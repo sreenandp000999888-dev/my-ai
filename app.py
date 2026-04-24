@@ -1,15 +1,34 @@
 import streamlit as st
+import streamlit.components.v1 as components  # Required for the workaround
 from groq import Groq
 import json
 import os
-import secrets  # For generating secure tokens
+import secrets
 from datetime import datetime
 import requests
 import hashlib
 
-# --- 1. PAGE CONFIG & FUTURISTIC STYLING ---
+# --- 1. PAGE CONFIG (Must be the first Streamlit command) ---
 st.set_page_config(page_title="Lakshmeeyam AI", page_icon="🤖", layout="wide")
 
+# --- 2. GOOGLE SEARCH CONSOLE VERIFICATION WORKAROUND ---
+# This script injects the meta tag into the <head> section of the main page.
+components.html(
+    """
+    <script>
+        if (!window.parent.document.querySelector('meta[name="google-site-verification"]')) {
+            const meta = window.parent.document.createElement('meta');
+            meta.name = "google-site-verification";
+            meta.content = "8OaOaw7JQ9Z4Zh1hdkiSvmbFdgMyOwrtPhc3sNHI2ZU";
+            window.parent.document.head.appendChild(meta);
+        }
+    </script>
+    """,
+    height=0,
+    width=0,
+)
+
+# --- 3. FUTURISTIC STYLING ---
 st.markdown("""
     <style>
     .stApp {
@@ -35,15 +54,13 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. DATABASE HELPERS ---
+# --- 4. DATABASE HELPERS ---
 USERS_FILE = "users.json"
 CHATS_FILE = "ai_chats.json"
 MESSAGES_FILE = "user_messages.json"
 
-
 def hash_password(password):
     return hashlib.sha256(str.encode(password)).hexdigest()
-
 
 def load_data(file, default):
     if not os.path.exists(file):
@@ -55,22 +72,18 @@ def load_data(file, default):
         except:
             return default
 
-
 def save_data(file, data):
     with open(file, "w") as f: json.dump(data, f)
-
 
 db_users = load_data(USERS_FILE, {})
 db_chats = load_data(CHATS_FILE, {})
 db_messages = load_data(MESSAGES_FILE, {})
 
-# --- 3. PERSISTENT LOGIN LOGIC (TOKEN BASED) ---
+# --- 5. PERSISTENT LOGIN LOGIC ---
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
-    # Check if a token exists in the URL
     url_token = st.query_params.get("token")
     if url_token:
-        # Scan database for a user matching this token
         for username, data in db_users.items():
             if data.get("token") == url_token:
                 st.session_state.logged_in = True
@@ -81,7 +94,7 @@ if "current_page" not in st.session_state: st.session_state.current_page = "Dash
 if "active_chat" not in st.session_state: st.session_state.active_chat = "New Chat"
 if "processing" not in st.session_state: st.session_state.processing = False
 
-# --- 4. LOGIN SYSTEM ---
+# --- 6. LOGIN SYSTEM ---
 if not st.session_state.logged_in:
     st.markdown("<h1 style='text-align: center; color: #00d4ff;'>🚀 LAKSHMEEYAM AI</h1>", unsafe_allow_html=True)
     col_l, _, col_r = st.columns([1.5, 0.1, 1])
@@ -107,19 +120,15 @@ if not st.session_state.logged_in:
             u_in = st.text_input("Username")
             p_in = st.text_input("Password", type="password")
             if st.button("Log In", use_container_width=True):
-                # Check for hashed password or plain text (for old accounts)
                 if u_in in db_users:
                     stored_pw = db_users[u_in]["password"]
                     if stored_pw == p_in or stored_pw == hash_password(p_in):
-                        # GENERATE SECURE TOKEN
                         new_token = secrets.token_hex(16)
                         db_users[u_in]["token"] = new_token
                         save_data(USERS_FILE, db_users)
-
                         st.session_state.logged_in = True
                         st.session_state.user = u_in
-                        st.query_params["token"] = new_token  # Push token to URL
-
+                        st.query_params["token"] = new_token
                         if u_in not in db_chats: db_chats[u_in] = {"New Chat": []}
                         save_data(CHATS_FILE, db_chats)
                         st.rerun()
@@ -135,7 +144,7 @@ if not st.session_state.logged_in:
         st.markdown("</div>", unsafe_allow_html=True)
     st.stop()
 
-# --- 5. SIDEBAR NAVIGATION ---
+# --- 7. SIDEBAR NAVIGATION ---
 with st.sidebar:
     st.markdown(f"<h2 style='color:#00d4ff;'>Welcome, {st.session_state.user}</h2>", unsafe_allow_html=True)
     if st.button("🏠 Dashboard", use_container_width=True): st.session_state.current_page = "Dashboard"
@@ -143,9 +152,7 @@ with st.sidebar:
     if st.button("💬 Messaging", use_container_width=True): st.session_state.current_page = "Messages"
     if st.button("🌤️ Weather", use_container_width=True): st.session_state.current_page = "Weather"
     st.write("---")
-
     if st.button("🚪 Logout", use_container_width=True, key="sidebar_logout"):
-        # Clear token from DB on logout
         if st.session_state.user in db_users:
             db_users[st.session_state.user]["token"] = ""
             save_data(USERS_FILE, db_users)
@@ -153,7 +160,7 @@ with st.sidebar:
         st.query_params.clear()
         st.rerun()
 
-# --- 6. PAGES ---
+# --- 8. PAGES ---
 
 # DASHBOARD
 if st.session_state.current_page == "Dashboard":
@@ -162,22 +169,23 @@ if st.session_state.current_page == "Dashboard":
     with c1:
         st.markdown("<div class='main-box'><h3>🤖 AI Lab</h3><p>Chat with Groq Llama</p></div>", unsafe_allow_html=True)
         if st.button("Open AI", use_container_width=True, key="dash_ai"):
-            st.session_state.current_page = "AI Chat";
+            st.session_state.current_page = "AI Chat"
             st.rerun()
     with c2:
         st.markdown("<div class='main-box'><h3>💬 Messaging</h3><p>Inbox & Chat</p></div>", unsafe_allow_html=True)
         if st.button("Open Messages", use_container_width=True, key="dash_msg"):
-            st.session_state.current_page = "Messages";
+            st.session_state.current_page = "Messages"
             st.rerun()
     with c3:
         st.markdown("<div class='main-box'><h3>🌤️ SkyView</h3><p>Live Weather</p></div>", unsafe_allow_html=True)
         if st.button("Open Weather", use_container_width=True, key="dash_weather"):
-            st.session_state.current_page = "Weather";
+            st.session_state.current_page = "Weather"
             st.rerun()
 
 # AI CHAT
 elif st.session_state.current_page == "AI Chat":
     st.title("🤖 AI Lab")
+    # TIP: For production, move your API Key to st.secrets for safety!
     client = Groq(api_key="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")
 
     if st.session_state.user not in db_chats:
@@ -260,11 +268,11 @@ elif st.session_state.current_page == "Messages":
                 u_data.setdefault("friends", []).append(r)
                 db_users[r].setdefault("friends", []).append(st.session_state.user)
                 u_data["requests"].remove(r)
-                save_data(USERS_FILE, db_users);
+                save_data(USERS_FILE, db_users)
                 st.rerun()
             if cd.button("Decline", key=f"dec_{r}"):
-                u_data["requests"].remove(r);
-                save_data(USERS_FILE, db_users);
+                u_data["requests"].remove(r)
+                save_data(USERS_FILE, db_users)
                 st.rerun()
 
     with t_chat:
@@ -288,7 +296,7 @@ elif st.session_state.current_page == "Messages":
                     txt = st.chat_input(f"Send to {dest}...")
                     if txt:
                         db_messages[cid].append({"sender": st.session_state.user, "text": txt})
-                        save_data(MESSAGES_FILE, db_messages);
+                        save_data(MESSAGES_FILE, db_messages)
                         st.rerun()
 
 # WEATHER
