@@ -28,16 +28,18 @@ st.set_page_config(page_title="Lakshmeeyam AI", page_icon="🚀", layout="wide")
  
 # ── Google Search Console Verification ────────────────────────────────────────
 # Uses JS to inject into <head> so Google crawler finds it regardless of login
-st.markdown("""
+import streamlit.components.v1 as components
+
+# Google Analytics 4 — must be at top, before any st.stop()
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-98JQK90KWX"></script>
 <script>
-(function() {
-    var meta = document.createElement('meta');
-    meta.name = 'google-site-verification';
-    meta.content = '<meta name="google-site-verification" content="8OaOaw7JQ9Z4Zh1hdkiSvmbFdgMyOwrtPhc3sNHI2ZU" />';
-    document.head.appendChild(meta);
-})();
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-98JQK90KWX');
 </script>
-""", unsafe_allow_html=True)
 # ──────────────────────────────────────────────────────────────────────────────
  
 st.markdown("""
