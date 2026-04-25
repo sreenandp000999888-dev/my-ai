@@ -1,4 +1,6 @@
 streamlit
-supabase
 groq
+supabase
 requests
+extra-streamlit-components
+streamlit-js-eval
