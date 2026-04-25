@@ -5,54 +5,52 @@ import hashlib
 import requests
 from datetime import datetime, timedelta
 from supabase import create_client, Client
- 
+
 # ── Optional packages (install via requirements.txt) ──────────────────────────
 try:
     from extra_streamlit_components import CookieManager
     _COOKIES_OK = True
 except ImportError:
     _COOKIES_OK = False
- 
+
 try:
     from streamlit_js_eval import get_geolocation
     _GEO_OK = True
 except ImportError:
     _GEO_OK = False
 # ──────────────────────────────────────────────────────────────────────────────
- 
- 
+
+
 # ─────────────────────────────────────────
 # 1. PAGE CONFIG & STYLING
 # ─────────────────────────────────────────
 st.set_page_config(page_title="Lakshmeeyam AI", page_icon="🚀", layout="wide")
- 
-# ── Google Search Console Verification ────────────────────────────────────────
-# Uses JS to inject into <head> so Google crawler finds it regardless of login
-import streamlit.components.v1 as components
 
-# Google Analytics 4 — must be at top, before any st.stop()
+# ── Google Analytics 4 (also verifies Search Console ownership) ───────────────
+import streamlit.components.v1 as components
+components.html("""
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-98JQK90KWX"></script>
 <script>
   window.dataLayer = window.dataLayer || [];
   function gtag(){dataLayer.push(arguments);}
   gtag('js', new Date());
-
   gtag('config', 'G-98JQK90KWX');
 </script>
+""", height=0)
 # ──────────────────────────────────────────────────────────────────────────────
- 
+
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Rajdhani:wght@400;600&display=swap');
- 
+
 html, body, [class*="css"] { font-family: 'Rajdhani', sans-serif; }
- 
+
 .stApp {
     background: linear-gradient(135deg, #0a0a1a 0%, #0d1b2a 50%, #0a0a1a 100%);
     min-height: 100vh;
 }
- 
+
 .main-box {
     background: rgba(0, 212, 255, 0.05);
     padding: 25px;
@@ -63,7 +61,7 @@ html, body, [class*="css"] { font-family: 'Rajdhani', sans-serif; }
     box-shadow: 0 0 20px rgba(0, 212, 255, 0.1), inset 0 0 20px rgba(0,0,0,0.3);
     backdrop-filter: blur(10px);
 }
- 
+
 .hero-title {
     font-family: 'Orbitron', sans-serif;
     font-size: 3rem;
@@ -76,7 +74,7 @@ html, body, [class*="css"] { font-family: 'Rajdhani', sans-serif; }
     animation: shimmer 3s infinite;
     margin-bottom: 0.2rem;
 }
- 
+
 .hero-sub {
     text-align: center;
     color: rgba(0,212,255,0.6);
@@ -85,9 +83,9 @@ html, body, [class*="css"] { font-family: 'Rajdhani', sans-serif; }
     text-transform: uppercase;
     margin-bottom: 2rem;
 }
- 
+
 @keyframes shimmer { 0%{background-position:0%} 50%{background-position:100%} 100%{background-position:0%} }
- 
+
 .stat-card {
     background: rgba(0,212,255,0.07);
     border: 1px solid rgba(0,212,255,0.2);
@@ -96,13 +94,13 @@ html, body, [class*="css"] { font-family: 'Rajdhani', sans-serif; }
     text-align: center;
     color: white;
 }
- 
+
 .stat-number {
     font-family: 'Orbitron', sans-serif;
     font-size: 2rem;
     color: #00d4ff;
 }
- 
+
 .chat-bubble-user {
     background: linear-gradient(135deg, #1a1a3e, #2a1a5e);
     border: 1px solid rgba(123,47,255,0.4);
@@ -113,7 +111,7 @@ html, body, [class*="css"] { font-family: 'Rajdhani', sans-serif; }
     max-width: 80%;
     margin-left: auto;
 }
- 
+
 .chat-bubble-ai {
     background: linear-gradient(135deg, #0a2a3a, #0a1a2e);
     border: 1px solid rgba(0,212,255,0.3);
@@ -123,7 +121,7 @@ html, body, [class*="css"] { font-family: 'Rajdhani', sans-serif; }
     color: white;
     max-width: 80%;
 }
- 
+
 .stButton > button {
     background: linear-gradient(135deg, rgba(0,212,255,0.15), rgba(123,47,255,0.15));
     color: #00d4ff;
@@ -134,21 +132,21 @@ html, body, [class*="css"] { font-family: 'Rajdhani', sans-serif; }
     letter-spacing: 1px;
     transition: all 0.3s;
 }
- 
+
 .stButton > button:hover {
     background: linear-gradient(135deg, rgba(0,212,255,0.3), rgba(123,47,255,0.3));
     border-color: #00d4ff;
     box-shadow: 0 0 15px rgba(0,212,255,0.4);
     transform: translateY(-1px);
 }
- 
+
 .stTextInput > div > div > input, .stTextArea > div > div > textarea {
     background: rgba(0,0,0,0.4) !important;
     color: white !important;
     border: 1px solid rgba(0,212,255,0.3) !important;
     border-radius: 8px !important;
 }
- 
+
 .stTabs [data-baseweb="tab-list"] { gap: 8px; }
 .stTabs [data-baseweb="tab"] {
     background: rgba(0,212,255,0.05);
@@ -162,12 +160,12 @@ html, body, [class*="css"] { font-family: 'Rajdhani', sans-serif; }
     border-color: #00d4ff !important;
     color: #00d4ff !important;
 }
- 
+
 [data-testid="stSidebar"] {
     background: rgba(5, 10, 25, 0.95);
     border-right: 1px solid rgba(0,212,255,0.2);
 }
- 
+
 .sidebar-logo {
     font-family: 'Orbitron', sans-serif;
     font-size: 1.1rem;
@@ -178,11 +176,11 @@ html, body, [class*="css"] { font-family: 'Rajdhani', sans-serif; }
     border-radius: 8px;
     margin-bottom: 15px;
 }
- 
+
 .stAppDeployButton { display: none !important; }
 #MainMenu { visibility: hidden; }
 footer { visibility: hidden; }
- 
+
 .weather-card {
     background: linear-gradient(135deg, rgba(0,100,200,0.2), rgba(0,50,100,0.3));
     border: 1px solid rgba(0,150,255,0.4);
@@ -191,7 +189,7 @@ footer { visibility: hidden; }
     text-align: center;
     color: white;
 }
- 
+
 .online-dot {
     display: inline-block;
     width: 8px; height: 8px;
@@ -201,7 +199,7 @@ footer { visibility: hidden; }
     animation: pulse 2s infinite;
 }
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
- 
+
 .gps-btn {
     background: linear-gradient(135deg, rgba(0,255,136,0.15), rgba(0,212,100,0.15)) !important;
     color: #00ff88 !important;
@@ -209,8 +207,8 @@ footer { visibility: hidden; }
 }
 </style>
 """, unsafe_allow_html=True)
- 
- 
+
+
 # ─────────────────────────────────────────
 # 2. SUPABASE CONNECTION
 # ─────────────────────────────────────────
@@ -222,8 +220,8 @@ except Exception as e:
     st.error("❌ Could not connect to database. Please check your Supabase secrets (URL and anon key).")
     st.code(str(e))
     st.stop()
- 
- 
+
+
 # ─────────────────────────────────────────
 # 3. COOKIE MANAGER (persistent login)
 # ─────────────────────────────────────────
@@ -233,7 +231,7 @@ if _COOKIES_OK:
         _cookie_manager = CookieManager(key="lakshmeeyam_cookies")
     except Exception:
         _cookie_manager = None
- 
+
 def _get_cookie(name: str):
     if _cookie_manager:
         try:
@@ -241,7 +239,7 @@ def _get_cookie(name: str):
         except Exception:
             return None
     return None
- 
+
 def _set_cookie(name: str, value: str, days: int = 30):
     if _cookie_manager:
         try:
@@ -252,21 +250,21 @@ def _set_cookie(name: str, value: str, days: int = 30):
             )
         except Exception:
             pass
- 
+
 def _delete_cookie(name: str):
     if _cookie_manager:
         try:
             _cookie_manager.delete(name, key=f"del_{name}")
         except Exception:
             pass
- 
- 
+
+
 # ─────────────────────────────────────────
 # 4. DB HELPER FUNCTIONS
 # ─────────────────────────────────────────
 def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
- 
+
 def get_user(username: str):
     try:
         res = supabase.table("users").select("*").eq("username", username).execute()
@@ -274,7 +272,7 @@ def get_user(username: str):
     except Exception as e:
         st.error(f"DB read error: {e}")
         return None
- 
+
 def save_user(username: str, data: dict):
     try:
         supabase.table("users").upsert({
@@ -288,14 +286,14 @@ def save_user(username: str, data: dict):
     except Exception as e:
         st.error(f"DB save error: {e}")
         return False
- 
+
 def get_ai_chats(username: str) -> dict:
     try:
         res = supabase.table("ai_chats").select("*").eq("username", username).execute()
         return {row["chat_title"]: row["messages"] for row in res.data} if res.data else {}
     except:
         return {}
- 
+
 def save_ai_chat(username: str, title: str, messages: list):
     try:
         supabase.table("ai_chats").upsert(
@@ -304,20 +302,20 @@ def save_ai_chat(username: str, title: str, messages: list):
         ).execute()
     except Exception as e:
         st.error(f"Chat save error: {e}")
- 
+
 def delete_ai_chat(username: str, title: str):
     try:
         supabase.table("ai_chats").delete().eq("username", username).eq("chat_title", title).execute()
     except:
         pass
- 
+
 def get_messages(chat_id: str) -> list:
     try:
         res = supabase.table("user_messages").select("*").eq("chat_id", chat_id).order("created_at").execute()
         return res.data or []
     except:
         return []
- 
+
 def send_message(chat_id: str, sender: str, text: str):
     try:
         supabase.table("user_messages").insert({
@@ -325,8 +323,8 @@ def send_message(chat_id: str, sender: str, text: str):
         }).execute()
     except Exception as e:
         st.error(f"Message error: {e}")
- 
- 
+
+
 # ─────────────────────────────────────────
 # 5. SESSION STATE DEFAULTS
 # ─────────────────────────────────────────
@@ -347,8 +345,8 @@ defaults = {
 for k, v in defaults.items():
     if k not in st.session_state:
         st.session_state[k] = v
- 
- 
+
+
 # ─────────────────────────────────────────
 # 6. PERSISTENT LOGIN CHECK
 #    Priority: session → cookie → query param
@@ -364,7 +362,7 @@ if not st.session_state.logged_in:
                 st.session_state.user = res.data[0]["username"]
         except:
             pass
- 
+
     # 6b. Fallback: URL query param (backward compat)
     if not st.session_state.logged_in:
         url_token = st.query_params.get("token")
@@ -378,17 +376,17 @@ if not st.session_state.logged_in:
                     _set_cookie("auth_token", url_token)
             except:
                 pass
- 
- 
+
+
 # ─────────────────────────────────────────
 # 7. LOGIN / SIGNUP PAGE
 # ─────────────────────────────────────────
 if not st.session_state.logged_in:
     st.markdown("<div class='hero-title'>🚀 LAKSHMEEYAM AI</div>", unsafe_allow_html=True)
     st.markdown("<div class='hero-sub'>Next-Gen AI Platform by Sreenand</div>", unsafe_allow_html=True)
- 
+
     col_l, spacer, col_r = st.columns([1.4, 0.1, 1])
- 
+
     with col_l:
         st.markdown("""
         <div class='main-box'>
@@ -425,18 +423,18 @@ if not st.session_state.logged_in:
             </div>
         </div>
         """, unsafe_allow_html=True)
- 
+
     with col_r:
         st.markdown("<div class='main-box'>", unsafe_allow_html=True)
         st.markdown("<h3 style='color:#00d4ff; font-family:Orbitron,sans-serif;'>🔐 Access Portal</h3>", unsafe_allow_html=True)
- 
+
         t1, t2 = st.tabs(["🔑 Login", "✨ Sign Up"])
- 
+
         with t1:
             u_in = st.text_input("Username", key="login_user", placeholder="Enter username")
             p_in = st.text_input("Password", type="password", key="login_pass", placeholder="Enter password")
             remember = st.checkbox("Stay logged in (persists after closing tab)", value=True)
- 
+
             if st.button("LOGIN →", use_container_width=True, key="login_btn"):
                 if u_in and p_in:
                     user_data = get_user(u_in)
@@ -461,12 +459,12 @@ if not st.session_state.logged_in:
                         st.error("❌ User not found")
                 else:
                     st.warning("Please fill in both fields")
- 
+
         with t2:
             nu = st.text_input("Choose Username", key="reg_user", placeholder="Pick a username")
             np = st.text_input("Choose Password", type="password", key="reg_pass", placeholder="Min 6 characters")
             np2 = st.text_input("Confirm Password", type="password", key="reg_pass2", placeholder="Repeat password")
- 
+
             if st.button("CREATE ACCOUNT →", use_container_width=True, key="reg_btn"):
                 if nu and np and np2:
                     if np != np2:
@@ -486,38 +484,38 @@ if not st.session_state.logged_in:
                             st.error("Failed to create account. Check Supabase connection.")
                 else:
                     st.warning("Please fill all fields")
- 
+
         st.markdown("</div>", unsafe_allow_html=True)
     st.stop()
- 
- 
+
+
 # ─────────────────────────────────────────
 # 8. SIDEBAR (logged in)
 # ─────────────────────────────────────────
 with st.sidebar:
     st.markdown(f"<div class='sidebar-logo'>⚡ LAKSHMEEYAM AI</div>", unsafe_allow_html=True)
     st.markdown(f"<p style='color:rgba(255,255,255,0.5); text-align:center; font-size:0.85rem;'><span class='online-dot'></span>{st.session_state.user}</p>", unsafe_allow_html=True)
- 
+
     pages = [
         ("🏠", "Home", "home"),
         ("🤖", "AI Chat", "AI Chat"),
         ("💬", "Messages", "Messages"),
         ("🌤️", "Weather", "Weather"),
     ]
- 
+
     for icon, label, page_key in pages:
         if st.button(f"{icon}  {label}", use_container_width=True, key=f"nav_{page_key}"):
             st.session_state.current_page = page_key
             st.rerun()
- 
+
     st.markdown("---")
- 
+
     # AI Chat history in sidebar
     if st.session_state.current_page == "AI Chat":
         if st.button("➕  New Chat", use_container_width=True):
             st.session_state.active_chat = "New Chat"
             st.rerun()
- 
+
         chats = get_ai_chats(st.session_state.user)
         if chats:
             st.markdown("<p style='color:rgba(255,255,255,0.4); font-size:0.75rem; text-transform:uppercase; letter-spacing:1px;'>Chat History</p>", unsafe_allow_html=True)
@@ -533,7 +531,7 @@ with st.sidebar:
                         if st.session_state.active_chat == title:
                             st.session_state.active_chat = "New Chat"
                         st.rerun()
- 
+
     st.markdown("---")
     if st.button("🔐  Logout", use_container_width=True):
         user_data = get_user(st.session_state.user)
@@ -546,25 +544,25 @@ with st.sidebar:
             del st.session_state[key]
         st.query_params.clear()
         st.rerun()
- 
- 
+
+
 # ─────────────────────────────────────────
 # 9. HOME PAGE
 # ─────────────────────────────────────────
 if st.session_state.current_page == "home":
     st.markdown("<div class='hero-title' style='font-size:2rem;'>🏠 Dashboard</div>", unsafe_allow_html=True)
     st.markdown(f"<p style='text-align:center; color:rgba(255,255,255,0.5);'>Welcome back, <span style='color:#00d4ff;'>{st.session_state.user}</span></p>", unsafe_allow_html=True)
- 
+
     st.markdown("<br>", unsafe_allow_html=True)
- 
+
     c1, c2, c3 = st.columns(3)
- 
+
     cards = [
         (c1, "🤖", "AI Lab", "Llama 3.1 • Multi-session chat • Auto-titled history", "#00d4ff", "Open AI", "AI Chat"),
         (c2, "💬", "Messaging", "Friend requests • Real-time DMs • Inbox", "#7b2fff", "Open Messages", "Messages"),
         (c3, "🌤️", "SkyView", "GPS live weather • Temperature • 5-Day Forecast", "#00ff88", "Open Weather", "Weather"),
     ]
- 
+
     for col, icon, title, desc, color, btn, page in cards:
         with col:
             st.markdown(f"""
@@ -577,8 +575,8 @@ if st.session_state.current_page == "home":
             if st.button(btn, use_container_width=True, key=f"home_{page}"):
                 st.session_state.current_page = page
                 st.rerun()
- 
- 
+
+
 # ─────────────────────────────────────────
 # 10. AI CHAT PAGE
 # ─────────────────────────────────────────
@@ -588,9 +586,9 @@ elif st.session_state.current_page == "AI Chat":
     except Exception:
         st.error("❌ Groq API key missing. Add GROQ_API_KEY to your Streamlit secrets.")
         st.stop()
- 
+
     st.markdown("<div class='hero-title' style='font-size:1.8rem;'>🤖 AI Chat</div>", unsafe_allow_html=True)
- 
+
     col_m1, col_m2 = st.columns([3, 1])
     with col_m2:
         model_choice = st.selectbox("Model", [
@@ -601,10 +599,10 @@ elif st.session_state.current_page == "AI Chat":
         ], label_visibility="collapsed")
     with col_m1:
         st.markdown(f"<p style='color:rgba(255,255,255,0.4); padding-top:8px;'>Active model: <span style='color:#00d4ff;'>{model_choice}</span></p>", unsafe_allow_html=True)
- 
+
     user_history = get_ai_chats(st.session_state.user)
     current_msgs = user_history.get(st.session_state.active_chat, [])
- 
+
     chat_container = st.container()
     with chat_container:
         if not current_msgs:
@@ -619,14 +617,14 @@ elif st.session_state.current_page == "AI Chat":
             for m in current_msgs:
                 with st.chat_message(m["role"]):
                     st.write(m["content"])
- 
+
     prompt = st.chat_input("Ask me anything...")
     if prompt:
         current_msgs.append({"role": "user", "content": prompt})
         st.session_state.processing = True
         save_ai_chat(st.session_state.user, st.session_state.active_chat, current_msgs)
         st.rerun()
- 
+
     if st.session_state.processing and current_msgs:
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
@@ -655,9 +653,9 @@ elif st.session_state.current_page == "AI Chat":
                     answer = response.choices[0].message.content
                 except Exception as e:
                     answer = f"⚠️ Error: {e}"
- 
+
                 current_msgs.append({"role": "assistant", "content": answer})
- 
+
                 active_title = st.session_state.active_chat
                 if active_title == "New Chat" and len(current_msgs) >= 2:
                     try:
@@ -676,28 +674,28 @@ elif st.session_state.current_page == "AI Chat":
                             st.session_state.active_chat = new_title
                     except:
                         pass
- 
+
                 save_ai_chat(st.session_state.user, active_title, current_msgs)
                 st.session_state.processing = False
                 st.rerun()
- 
- 
+
+
 # ─────────────────────────────────────────
 # 11. MESSAGES PAGE
 # ─────────────────────────────────────────
 elif st.session_state.current_page == "Messages":
     st.markdown("<div class='hero-title' style='font-size:1.8rem;'>💬 Messaging</div>", unsafe_allow_html=True)
- 
+
     u_data = get_user(st.session_state.user)
     if not u_data:
         st.error("Could not load user data.")
         st.stop()
- 
+
     t_chat, t_inbox = st.tabs(["💬 Direct Messages", "📥 Friends & Requests"])
- 
+
     with t_inbox:
         col_add, col_reqs = st.columns([1, 1])
- 
+
         with col_add:
             st.markdown("<h4 style='color:#00d4ff;'>➕ Add Friend</h4>", unsafe_allow_html=True)
             target = st.text_input("Search username", placeholder="Enter exact username")
@@ -720,7 +718,7 @@ elif st.session_state.current_page == "Messages":
                         st.error("❌ User not found")
                 else:
                     st.warning("Enter a valid username")
- 
+
         with col_reqs:
             st.markdown("<h4 style='color:#7b2fff;'>📨 Incoming Requests</h4>", unsafe_allow_html=True)
             incoming = u_data.get("requests", [])
@@ -744,7 +742,7 @@ elif st.session_state.current_page == "Messages":
                             u_data["requests"].remove(r)
                             save_user(st.session_state.user, u_data)
                             st.rerun()
- 
+
         st.markdown("---")
         st.markdown("<h4 style='color:#00ff88;'>👥 Your Friends</h4>", unsafe_allow_html=True)
         friends_list = u_data.get("friends", [])
@@ -755,7 +753,7 @@ elif st.session_state.current_page == "Messages":
             for i, f in enumerate(friends_list):
                 with cols[i % 4]:
                     st.markdown(f"<div style='background:rgba(0,255,136,0.08); border:1px solid rgba(0,255,136,0.2); border-radius:8px; padding:10px; text-align:center; color:white;'>👤 {f}</div>", unsafe_allow_html=True)
- 
+
     with t_chat:
         friends = u_data.get("friends", [])
         if not friends:
@@ -774,14 +772,14 @@ elif st.session_state.current_page == "Messages":
                     if st.button(f"{'🟢' if active_dm else '👤'} {f}", use_container_width=True, key=f"dm_{f}"):
                         st.session_state.msg_target = f
                         st.rerun()
- 
+
             with cl:
                 dest = st.session_state.get("msg_target")
                 if dest:
                     st.markdown(f"<h4 style='color:#00d4ff;'>💬 Chat with {dest}</h4>", unsafe_allow_html=True)
                     cid = "_".join(sorted([st.session_state.user, dest]))
                     messages = get_messages(cid)
- 
+
                     if not messages:
                         st.markdown(f"<p style='color:rgba(255,255,255,0.3); text-align:center; padding:30px;'>No messages yet. Say hi to {dest}! 👋</p>", unsafe_allow_html=True)
                     else:
@@ -792,21 +790,21 @@ elif st.session_state.current_page == "Messages":
                                 st.write(m["text"])
                                 if ts:
                                     st.caption(f"{m['sender']} · {ts}")
- 
+
                     txt = st.chat_input(f"Message {dest}...")
                     if txt:
                         send_message(cid, st.session_state.user, txt)
                         st.rerun()
                 else:
                     st.markdown("<p style='color:rgba(255,255,255,0.3); text-align:center; padding:60px;'>← Select a friend to chat</p>", unsafe_allow_html=True)
- 
- 
+
+
 # ─────────────────────────────────────────
 # 12. WEATHER PAGE  ✅ GPS UPGRADED
 # ─────────────────────────────────────────
 elif st.session_state.current_page == "Weather":
     st.markdown("<div class='hero-title' style='font-size:1.8rem;'>🌤️ SkyView Weather</div>", unsafe_allow_html=True)
- 
+
     WMO_CODES = {
         0: ("Clear sky", "☀️"), 1: ("Mainly clear", "🌤️"), 2: ("Partly cloudy", "⛅"),
         3: ("Overcast", "☁️"), 45: ("Foggy", "🌫️"), 48: ("Icy fog", "🌫️"),
@@ -815,10 +813,10 @@ elif st.session_state.current_page == "Weather":
         71: ("Slight snow", "🌨️"), 73: ("Moderate snow", "❄️"), 75: ("Heavy snow", "❄️"),
         80: ("Rain showers", "🌦️"), 81: ("Heavy showers", "⛈️"), 95: ("Thunderstorm", "⛈️"),
     }
- 
+
     # ── GPS controls ──────────────────────────────────────────────────────────
     col_search, col_gps, _ = st.columns([2, 1, 0.5])
- 
+
     with col_search:
         loc = st.text_input(
             "",
@@ -826,7 +824,7 @@ elif st.session_state.current_page == "Weather":
             label_visibility="collapsed",
             value=st.session_state.gps_city or ""
         )
- 
+
     with col_gps:
         if _GEO_OK:
             gps_btn = st.button("📍 Use My Location", use_container_width=True, key="gps_btn")
@@ -836,9 +834,9 @@ elif st.session_state.current_page == "Weather":
                 "<small style='color:rgba(255,100,100,0.7);'>Install streamlit-js-eval for GPS</small>",
                 unsafe_allow_html=True
             )
- 
+
     search_btn = st.button("Get Weather →", key="search_weather_btn")
- 
+
     # ── GPS geolocation flow ──────────────────────────────────────────────────
     if gps_btn and _GEO_OK:
         with st.spinner("📍 Requesting your location from browser..."):
@@ -847,7 +845,7 @@ elif st.session_state.current_page == "Weather":
                 if geo_data and "coords" in geo_data:
                     gps_lat = geo_data["coords"]["latitude"]
                     gps_lon = geo_data["coords"]["longitude"]
- 
+
                     # Reverse-geocode with Nominatim (free, no key needed)
                     rev_resp = requests.get(
                         "https://nominatim.openstreetmap.org/reverse",
@@ -864,7 +862,7 @@ elif st.session_state.current_page == "Weather":
                         or "Your Location"
                     )
                     country = addr.get("country", "")
- 
+
                     st.session_state.gps_lat = gps_lat
                     st.session_state.gps_lon = gps_lon
                     st.session_state.gps_city = city_name
@@ -875,7 +873,7 @@ elif st.session_state.current_page == "Weather":
                     st.warning("⚠️ Could not get location. Please allow location access in your browser.")
             except Exception as e:
                 st.error(f"❌ GPS error: {e}")
- 
+
     # ── Determine weather source: GPS or manual ───────────────────────────────
     def _fetch_and_render_weather(lat, lon, city_name, country):
         """Fetch and render the full weather UI for given coordinates."""
@@ -888,14 +886,14 @@ elif st.session_state.current_page == "Weather":
             f"&forecast_days=5&timezone=auto",
             timeout=10
         ).json()
- 
+
         curr = weather["current_weather"]
         temp  = curr["temperature"]
         wind  = curr["windspeed"]
         wcode = curr.get("weathercode", 0)
         condition, w_icon = WMO_CODES.get(wcode, ("Unknown", "🌡️"))
         is_day = curr.get("is_day", 1)
- 
+
         # Badge for GPS vs manual
         source_badge = (
             "<span style='background:rgba(0,255,136,0.15); border:1px solid #00ff88; "
@@ -903,7 +901,7 @@ elif st.session_state.current_page == "Weather":
             "📍 GPS</span>"
             if st.session_state.gps_lat else ""
         )
- 
+
         st.markdown(f"""
         <div class='weather-card'>
             <h2 style='color:white; margin:0;'>{w_icon} {city_name}, {country}{source_badge}</h2>
@@ -919,9 +917,9 @@ elif st.session_state.current_page == "Weather":
             </div>
         </div>
         """, unsafe_allow_html=True)
- 
+
         st.markdown("<br>", unsafe_allow_html=True)
- 
+
         # Hourly overview (next 8 hours)
         hourly = weather.get("hourly", {})
         if hourly:
@@ -930,7 +928,7 @@ elif st.session_state.current_page == "Weather":
             humids   = hourly.get("relativehumidity_2m", [])[:8]
             precip   = hourly.get("precipitation_probability", [])[:8]
             app_temps= hourly.get("apparent_temperature", [])[:8]
- 
+
             h_cols = st.columns(len(times))
             for i, (t_str, hum, prec, app_t) in enumerate(zip(times, humids, precip, app_temps)):
                 hour = t_str[11:16] if len(t_str) > 10 else t_str
@@ -944,7 +942,7 @@ elif st.session_state.current_page == "Weather":
                         <div style='font-size:0.75rem; color:rgba(100,200,255,0.7);'>🌧{prec}%</div>
                     </div>
                     """, unsafe_allow_html=True)
- 
+
         # 5-day forecast
         daily = weather.get("daily", {})
         if daily:
@@ -954,7 +952,7 @@ elif st.session_state.current_page == "Weather":
             d_min   = daily.get("temperature_2m_min", [])
             d_prec  = daily.get("precipitation_sum", [])
             d_codes = daily.get("weathercode", [])
- 
+
             d_cols = st.columns(len(d_dates))
             for i in range(len(d_dates)):
                 dc, dicon = WMO_CODES.get(d_codes[i] if i < len(d_codes) else 0, ("?", "🌡️"))
@@ -973,7 +971,7 @@ elif st.session_state.current_page == "Weather":
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
- 
+
     # ── Render weather ────────────────────────────────────────────────────────
     # Case 1: GPS coords already stored from previous GPS fetch
     if st.session_state.weather_fetched and st.session_state.gps_lat:
@@ -996,7 +994,7 @@ elif st.session_state.current_page == "Weather":
             st.error("❌ Connection error.")
         except Exception as e:
             st.error(f"❌ Error: {e}")
- 
+
     # Case 2: Manual city search
     elif search_btn and loc:
         with st.spinner("Fetching weather data..."):
@@ -1005,7 +1003,7 @@ elif st.session_state.current_page == "Weather":
                     f"https://geocoding-api.open-meteo.com/v1/search?name={loc}&count=1&language=en&format=json",
                     timeout=10
                 ).json()
- 
+
                 if "results" not in geo or not geo["results"]:
                     st.error(f"❌ City '{loc}' not found. Try a different spelling.")
                 else:
@@ -1014,17 +1012,17 @@ elif st.session_state.current_page == "Weather":
                     country   = r.get("country", "")
                     lat, lon  = r["latitude"], r["longitude"]
                     _fetch_and_render_weather(lat, lon, city_name, country)
- 
+
             except requests.exceptions.ConnectionError:
                 st.error("❌ Connection error. Check your internet connection.")
             except requests.exceptions.Timeout:
                 st.error("❌ Request timed out. Try again.")
             except Exception as e:
                 st.error(f"❌ Error: {e}")
- 
+
     elif not loc and search_btn:
         st.warning("Please enter a city name")
- 
+
     # Case 3: Empty state
     elif not st.session_state.weather_fetched:
         st.markdown("""
