@@ -325,6 +325,115 @@ def send_message(chat_id: str, sender: str, text: str):
     except Exception as e:
         st.error(f"Message error: {e}")
 
+# ── Music DB helpers ──────────────────────────────────────────────────────────
+def get_liked_songs(username: str) -> list:
+    try:
+        res = supabase.table("liked_songs").select("*").eq("username", username).order("created_at", desc=True).execute()
+        return res.data or []
+    except:
+        return []
+
+def like_song(username: str, video_id: str, title: str, artist: str, thumbnail: str):
+    try:
+        supabase.table("liked_songs").upsert(
+            {"username": username, "video_id": video_id, "title": title, "artist": artist, "thumbnail": thumbnail},
+            on_conflict="username,video_id"
+        ).execute()
+    except:
+        pass
+
+def unlike_song(username: str, video_id: str):
+    try:
+        supabase.table("liked_songs").delete().eq("username", username).eq("video_id", video_id).execute()
+    except:
+        pass
+
+def get_playlists(username: str) -> list:
+    try:
+        res = supabase.table("playlists").select("*").eq("username", username).execute()
+        return res.data or []
+    except:
+        return []
+
+def save_playlist(username: str, name: str, songs: list):
+    try:
+        supabase.table("playlists").upsert(
+            {"username": username, "name": name, "songs": songs},
+            on_conflict="username,name"
+        ).execute()
+    except:
+        pass
+
+def delete_playlist(username: str, name: str):
+    try:
+        supabase.table("playlists").delete().eq("username", username).eq("name", name).execute()
+    except:
+        pass
+
+def get_jam(username: str) -> dict:
+    """Get active jam sent TO this user."""
+    try:
+        res = supabase.table("jams").select("*").eq("guest", username).eq("active", True).order("created_at", desc=True).limit(1).execute()
+        return res.data[0] if res.data else {}
+    except:
+        return {}
+
+def send_jam(host: str, guest: str, video_id: str, title: str, thumbnail: str):
+    try:
+        # Deactivate old jams from this host to this guest
+        supabase.table("jams").update({"active": False}).eq("host", host).eq("guest", guest).execute()
+        supabase.table("jams").insert({
+            "host": host, "guest": guest,
+            "video_id": video_id, "title": title,
+            "thumbnail": thumbnail, "active": True
+        }).execute()
+    except:
+        pass
+
+def youtube_search(query: str, max_results: int = 12) -> list:
+    try:
+        api_key = st.secrets.get("YOUTUBE_API_KEY", "")
+        if not api_key:
+            return []
+        resp = requests.get(
+            "https://www.googleapis.com/youtube/v3/search",
+            params={
+                "part": "snippet", "q": query + " music",
+                "type": "video", "videoCategoryId": "10",
+                "maxResults": max_results, "key": api_key,
+                "safeSearch": "moderate"
+            },
+            timeout=10
+        ).json()
+        return resp.get("items", [])
+    except:
+        return []
+
+def youtube_trending(max_results: int = 12) -> list:
+    try:
+        api_key = st.secrets.get("YOUTUBE_API_KEY", "")
+        if not api_key:
+            return []
+        resp = requests.get(
+            "https://www.googleapis.com/youtube/v3/videos",
+            params={
+                "part": "snippet", "chart": "mostPopular",
+                "videoCategoryId": "10", "maxResults": max_results,
+                "regionCode": "IN", "key": api_key
+            },
+            timeout=10
+        ).json()
+        # Normalize to same shape as search results
+        items = []
+        for item in resp.get("items", []):
+            items.append({
+                "id": {"videoId": item["id"]},
+                "snippet": item["snippet"]
+            })
+        return items
+    except:
+        return []
+# ─────────────────────────────────────────────────────────────────────────────
 
 # ─────────────────────────────────────────
 # 5. SESSION STATE DEFAULTS
@@ -342,6 +451,17 @@ defaults = {
     "gps_city": None,
     "gps_country": None,
     "weather_fetched": False,
+    # Music player state
+    "music_tab": "home",
+    "now_playing_id": None,
+    "now_playing_title": "",
+    "now_playing_artist": "",
+    "now_playing_thumb": "",
+    "queue": [],
+    "music_search_results": [],
+    "music_search_query": "",
+    "active_playlist_name": None,
+    "playlist_add_target": None,
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -501,6 +621,7 @@ with st.sidebar:
         ("🏠", "Home", "home"),
         ("🤖", "AI Chat", "AI Chat"),
         ("💬", "Messages", "Messages"),
+        ("🎵", "Music", "Music"),
         ("🌤️", "Weather", "Weather"),
     ]
 
@@ -556,12 +677,13 @@ if st.session_state.current_page == "home":
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
 
     cards = [
         (c1, "🤖", "AI Lab", "Llama 3.1 • Multi-session chat • Auto-titled history", "#00d4ff", "Open AI", "AI Chat"),
-        (c2, "💬", "Messaging", "Friend requests • Real-time DMs • Inbox", "#7b2fff", "Open Messages", "Messages"),
-        (c3, "🌤️", "SkyView", "GPS live weather • Temperature • 5-Day Forecast", "#00ff88", "Open Weather", "Weather"),
+        (c2, "💬", "Messaging", "DMs • Friends • Music Jam sharing", "#7b2fff", "Open Messages", "Messages"),
+        (c3, "🎵", "Music", "YouTube Music • Search • Playlists • Jam", "#ff4444", "Open Music", "Music"),
+        (c4, "🌤️", "SkyView", "GPS live weather • Temperature • 7-Day Forecast", "#00ff88", "Open Weather", "Weather"),
     ]
 
     for col, icon, title, desc, color, btn, page in cards:
@@ -682,9 +804,11 @@ elif st.session_state.current_page == "AI Chat":
 
 
 # ─────────────────────────────────────────
-# 11. MESSAGES PAGE
+# 11. MESSAGES PAGE (upgraded)
 # ─────────────────────────────────────────
 elif st.session_state.current_page == "Messages":
+    import streamlit.components.v1 as _comp
+
     st.markdown("<div class='hero-title' style='font-size:1.8rem;'>💬 Messaging</div>", unsafe_allow_html=True)
 
     u_data = get_user(st.session_state.user)
@@ -692,15 +816,128 @@ elif st.session_state.current_page == "Messages":
         st.error("Could not load user data.")
         st.stop()
 
-    t_chat, t_inbox = st.tabs(["💬 Direct Messages", "📥 Friends & Requests"])
+    friends_list = u_data.get("friends", [])
 
-    with t_inbox:
-        col_add, col_reqs = st.columns([1, 1])
+    # ── Check for incoming jams ───────────────────────────────────────────────
+    incoming_jam = get_jam(st.session_state.user)
+    if incoming_jam:
+        host = incoming_jam.get("host", "")
+        jam_vid = incoming_jam.get("video_id", "")
+        jam_title = incoming_jam.get("title", "Unknown")
+        jam_thumb = incoming_jam.get("thumbnail", "")
+        st.markdown(f"""
+        <div style='background:linear-gradient(135deg,rgba(255,68,68,0.15),rgba(123,47,255,0.15));
+        border:1px solid rgba(255,68,68,0.5); border-radius:14px; padding:16px;
+        display:flex; align-items:center; gap:14px; margin-bottom:18px;'>
+            <img src='{jam_thumb}' style='width:60px; height:45px; border-radius:6px; object-fit:cover;'/>
+            <div>
+                <div style='color:#ff4444; font-weight:700; font-size:0.9rem;'>🎵 {host} is jamming with you!</div>
+                <div style='color:white; font-size:0.85rem;'>{jam_title}</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("🎵 Join Jam → Open Music", key="join_jam_btn"):
+            st.session_state.now_playing_id = jam_vid
+            st.session_state.now_playing_title = jam_title
+            st.session_state.now_playing_thumb = jam_thumb
+            st.session_state.current_page = "Music"
+            st.session_state.music_tab = "jam"
+            st.rerun()
 
-        with col_add:
+    t_chat, t_friends, t_requests = st.tabs(["💬 Chats", "👥 Friends", "📨 Requests"])
+
+    # ── CHATS TAB ─────────────────────────────────────────────────────────────
+    with t_chat:
+        if not friends_list:
+            st.markdown("""
+            <div style='text-align:center; padding:60px; color:rgba(255,255,255,0.3);'>
+                <div style='font-size:3rem;'>💬</div>
+                <p>Add friends first to start chatting</p>
+            </div>""", unsafe_allow_html=True)
+        else:
+            left, right = st.columns([1, 3])
+            with left:
+                st.markdown("<p style='color:rgba(255,255,255,0.4); font-size:0.75rem; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;'>Conversations</p>", unsafe_allow_html=True)
+                for f in friends_list:
+                    active = st.session_state.get("msg_target") == f
+                    cid = "_".join(sorted([st.session_state.user, f]))
+                    msgs = get_messages(cid)
+                    last_msg = msgs[-1]["text"][:20] + "…" if msgs else "Say hi! 👋"
+                    badge_color = "#00d4ff" if active else "rgba(255,255,255,0.15)"
+                    border_color = "#00d4ff" if active else "rgba(255,255,255,0.1)"
+                    st.markdown(f"""
+                    <div style='background:{badge_color}20; border:1px solid {border_color};
+                    border-radius:10px; padding:10px 12px; margin-bottom:6px; cursor:pointer;'>
+                        <div style='color:white; font-weight:600;'>{"🟢" if active else "👤"} {f}</div>
+                        <div style='color:rgba(255,255,255,0.4); font-size:0.75rem; margin-top:2px;'>{last_msg}</div>
+                    </div>""", unsafe_allow_html=True)
+                    if st.button(f"Open chat", key=f"dm_{f}", use_container_width=True):
+                        st.session_state.msg_target = f
+                        st.rerun()
+
+            with right:
+                dest = st.session_state.get("msg_target")
+                if dest:
+                    cid = "_".join(sorted([st.session_state.user, dest]))
+                    # Header with jam button
+                    hcol1, hcol2 = st.columns([3, 1])
+                    with hcol1:
+                        st.markdown(f"<h4 style='color:#00d4ff; margin:0;'>💬 {dest}</h4>", unsafe_allow_html=True)
+                    with hcol2:
+                        if st.session_state.now_playing_id:
+                            if st.button("🎵 Share Jam", use_container_width=True, key="share_jam_msg"):
+                                send_jam(
+                                    st.session_state.user, dest,
+                                    st.session_state.now_playing_id,
+                                    st.session_state.now_playing_title,
+                                    st.session_state.now_playing_thumb
+                                )
+                                st.success(f"🎵 Jam shared with {dest}!")
+
+                    # Messages
+                    messages = get_messages(cid)
+                    msg_box = st.container()
+                    with msg_box:
+                        if not messages:
+                            st.markdown(f"<div style='text-align:center; padding:40px; color:rgba(255,255,255,0.3);'>"
+                                        f"<div style='font-size:2rem;'>👋</div>"
+                                        f"<p>Start your conversation with {dest}</p></div>",
+                                        unsafe_allow_html=True)
+                        else:
+                            for m in messages:
+                                is_me = m["sender"] == st.session_state.user
+                                ts = m.get("created_at", "")[:16].replace("T", " ") if m.get("created_at") else ""
+                                align = "flex-end" if is_me else "flex-start"
+                                bubble_bg = "linear-gradient(135deg,#1a1a3e,#2a1a5e)" if is_me else "linear-gradient(135deg,#0a2a3a,#0a1a2e)"
+                                border = "rgba(123,47,255,0.4)" if is_me else "rgba(0,212,255,0.3)"
+                                radius = "12px 12px 2px 12px" if is_me else "12px 12px 12px 2px"
+                                st.markdown(f"""
+                                <div style='display:flex; justify-content:{align}; margin:6px 0;'>
+                                    <div style='background:{bubble_bg}; border:1px solid {border};
+                                    border-radius:{radius}; padding:10px 14px; max-width:70%;'>
+                                        <div style='color:white; font-size:0.95rem;'>{m["text"]}</div>
+                                        <div style='color:rgba(255,255,255,0.3); font-size:0.7rem; margin-top:4px; text-align:{"right" if is_me else "left"};'>{ts}</div>
+                                    </div>
+                                </div>""", unsafe_allow_html=True)
+
+                    txt = st.chat_input(f"Message {dest}…")
+                    if txt:
+                        send_message(cid, st.session_state.user, txt)
+                        st.rerun()
+                else:
+                    st.markdown("""
+                    <div style='text-align:center; padding:80px; color:rgba(255,255,255,0.2);'>
+                        <div style='font-size:3rem;'>💬</div>
+                        <p>Select a conversation on the left</p>
+                    </div>""", unsafe_allow_html=True)
+
+    # ── FRIENDS TAB ───────────────────────────────────────────────────────────
+    with t_friends:
+        add_col, list_col = st.columns([1, 1])
+        with add_col:
             st.markdown("<h4 style='color:#00d4ff;'>➕ Add Friend</h4>", unsafe_allow_html=True)
-            target = st.text_input("Search username", placeholder="Enter exact username")
-            if st.button("Send Friend Request", use_container_width=True):
+            target = st.text_input("Username to add", placeholder="Enter exact username", key="friend_search")
+            if st.button("Send Request →", use_container_width=True, key="send_req_btn"):
                 if target and target != st.session_state.user:
                     target_data = get_user(target)
                     if target_data:
@@ -714,91 +951,442 @@ elif st.session_state.current_page == "Messages":
                             reqs.append(st.session_state.user)
                             target_data["requests"] = reqs
                             save_user(target, target_data)
-                            st.success(f"✅ Friend request sent to {target}!")
+                            st.success(f"✅ Request sent to {target}!")
                     else:
                         st.error("❌ User not found")
                 else:
                     st.warning("Enter a valid username")
 
-        with col_reqs:
-            st.markdown("<h4 style='color:#7b2fff;'>📨 Incoming Requests</h4>", unsafe_allow_html=True)
-            incoming = u_data.get("requests", [])
-            if not incoming:
-                st.markdown("<p style='color:rgba(255,255,255,0.4);'>No pending requests</p>", unsafe_allow_html=True)
+        with list_col:
+            st.markdown("<h4 style='color:#00ff88;'>👥 Your Friends</h4>", unsafe_allow_html=True)
+            if not friends_list:
+                st.markdown("<p style='color:rgba(255,255,255,0.4);'>No friends yet.</p>", unsafe_allow_html=True)
             else:
-                for r in incoming:
-                    with st.container():
-                        st.markdown(f"<div class='main-box' style='padding:12px;'><b style='color:white;'>{r}</b> <span style='color:rgba(255,255,255,0.5);'>wants to connect</span></div>", unsafe_allow_html=True)
-                        ca, cd = st.columns(2)
-                        if ca.button("✅ Accept", key=f"acc_{r}", use_container_width=True):
-                            u_data["friends"].append(r)
-                            u_data["requests"].remove(r)
-                            save_user(st.session_state.user, u_data)
-                            r_data = get_user(r)
-                            if r_data and st.session_state.user not in r_data.get("friends", []):
-                                r_data["friends"].append(st.session_state.user)
-                                save_user(r, r_data)
-                            st.rerun()
-                        if cd.button("❌ Decline", key=f"dec_{r}", use_container_width=True):
-                            u_data["requests"].remove(r)
-                            save_user(st.session_state.user, u_data)
+                for f in friends_list:
+                    fc1, fc2 = st.columns([3, 1])
+                    with fc1:
+                        st.markdown(f"""
+                        <div style='background:rgba(0,255,136,0.08); border:1px solid rgba(0,255,136,0.2);
+                        border-radius:8px; padding:10px 12px;'>
+                            <span style='color:white; font-weight:600;'>👤 {f}</span>
+                        </div>""", unsafe_allow_html=True)
+                    with fc2:
+                        if st.button("Chat", key=f"goto_{f}", use_container_width=True):
+                            st.session_state.msg_target = f
+                            st.session_state.current_page = "Messages"
                             st.rerun()
 
-        st.markdown("---")
-        st.markdown("<h4 style='color:#00ff88;'>👥 Your Friends</h4>", unsafe_allow_html=True)
-        friends_list = u_data.get("friends", [])
-        if not friends_list:
-            st.markdown("<p style='color:rgba(255,255,255,0.4);'>No friends yet. Send a request above!</p>", unsafe_allow_html=True)
+    # ── REQUESTS TAB ──────────────────────────────────────────────────────────
+    with t_requests:
+        st.markdown("<h4 style='color:#7b2fff;'>📨 Incoming Friend Requests</h4>", unsafe_allow_html=True)
+        incoming_reqs = u_data.get("requests", [])
+        if not incoming_reqs:
+            st.markdown("<p style='color:rgba(255,255,255,0.4);'>No pending requests.</p>", unsafe_allow_html=True)
         else:
-            cols = st.columns(min(len(friends_list), 4))
-            for i, f in enumerate(friends_list):
-                with cols[i % 4]:
-                    st.markdown(f"<div style='background:rgba(0,255,136,0.08); border:1px solid rgba(0,255,136,0.2); border-radius:8px; padding:10px; text-align:center; color:white;'>👤 {f}</div>", unsafe_allow_html=True)
+            for r in incoming_reqs:
+                rc1, rc2, rc3 = st.columns([3, 1, 1])
+                with rc1:
+                    st.markdown(f"""
+                    <div style='background:rgba(123,47,255,0.1); border:1px solid rgba(123,47,255,0.3);
+                    border-radius:8px; padding:10px 14px;'>
+                        <b style='color:white;'>{r}</b>
+                        <span style='color:rgba(255,255,255,0.5); margin-left:8px;'>wants to connect</span>
+                    </div>""", unsafe_allow_html=True)
+                with rc2:
+                    if st.button("✅ Accept", key=f"acc_{r}", use_container_width=True):
+                        u_data["friends"].append(r)
+                        u_data["requests"].remove(r)
+                        save_user(st.session_state.user, u_data)
+                        r_data = get_user(r)
+                        if r_data and st.session_state.user not in r_data.get("friends", []):
+                            r_data["friends"].append(st.session_state.user)
+                            save_user(r, r_data)
+                        st.rerun()
+                with rc3:
+                    if st.button("❌ Decline", key=f"dec_{r}", use_container_width=True):
+                        u_data["requests"].remove(r)
+                        save_user(st.session_state.user, u_data)
+                        st.rerun()
 
-    with t_chat:
-        friends = u_data.get("friends", [])
-        if not friends:
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 11b. MUSIC PAGE — Full YouTube Music-style
+# ═══════════════════════════════════════════════════════════════════════════════
+elif st.session_state.current_page == "Music":
+    import streamlit.components.v1 as _comp
+
+    HAS_YT_KEY = bool(st.secrets.get("YOUTUBE_API_KEY", ""))
+
+    # ── Sticky Now Playing bar ────────────────────────────────────────────────
+    if st.session_state.now_playing_id:
+        vid_id = st.session_state.now_playing_id
+        vid_title = st.session_state.now_playing_title
+        vid_thumb = st.session_state.now_playing_thumb
+        vid_artist = st.session_state.now_playing_artist
+
+        st.markdown(f"""
+        <div style='background:linear-gradient(90deg,#1a0a2e,#0a1a2e);
+        border:1px solid rgba(255,68,68,0.4); border-radius:14px;
+        padding:14px 20px; display:flex; align-items:center; gap:16px; margin-bottom:16px;'>
+            <img src='{vid_thumb}' style='width:56px; height:42px; border-radius:6px; object-fit:cover;'/>
+            <div style='flex:1;'>
+                <div style='color:white; font-weight:700; font-size:0.95rem;'>{vid_title}</div>
+                <div style='color:rgba(255,255,255,0.5); font-size:0.8rem;'>{vid_artist}</div>
+            </div>
+            <div style='color:#ff4444; font-size:0.8rem; letter-spacing:1px;'>▶ NOW PLAYING</div>
+        </div>""", unsafe_allow_html=True)
+
+        _comp.html(f"""
+        <div style="background:#0a0a1a; border-radius:10px; overflow:hidden;">
+        <iframe
+            width="100%" height="90"
+            src="https://www.youtube-nocookie.com/embed/{vid_id}?autoplay=1&modestbranding=1&rel=0&iv_load_policy=3"
+            frameborder="0"
+            allow="autoplay; encrypted-media"
+            allowfullscreen>
+        </iframe>
+        </div>""", height=100)
+
+        # Queue next
+        if st.session_state.queue:
+            next_track = st.session_state.queue[0]
+            nq1, nq2, nq3 = st.columns([1, 3, 1])
+            with nq2:
+                if st.button(f"⏭ Next: {next_track['title'][:35]}…", use_container_width=True, key="next_track_btn"):
+                    st.session_state.now_playing_id     = next_track["id"]
+                    st.session_state.now_playing_title  = next_track["title"]
+                    st.session_state.now_playing_artist = next_track.get("artist", "")
+                    st.session_state.now_playing_thumb  = next_track.get("thumb", "")
+                    st.session_state.queue = st.session_state.queue[1:]
+                    st.rerun()
+
+    # ── Music sub-navigation ──────────────────────────────────────────────────
+    st.markdown("<div class='hero-title' style='font-size:1.8rem;'>🎵 Lakshmeeyam Music</div>", unsafe_allow_html=True)
+
+    music_tabs = st.tabs([
+        "🏠 Home", "🔍 Search", "📚 Library", "➕ Playlists", "🎵 Jam", "📋 Queue"
+    ])
+
+    # ── helper to render a video card grid ────────────────────────────────────
+    def render_video_grid(items, cols=4, prefix="vg"):
+        if not items:
+            st.markdown("<p style='color:rgba(255,255,255,0.4); text-align:center;'>No results.</p>", unsafe_allow_html=True)
+            return
+        rows = [items[i:i+cols] for i in range(0, len(items), cols)]
+        for row in rows:
+            grid = st.columns(cols)
+            for gi, item in enumerate(row):
+                vid_id   = item["id"]["videoId"]
+                snip     = item["snippet"]
+                title    = snip.get("title", "Unknown")[:50]
+                artist   = snip.get("channelTitle", "")[:30]
+                thumb    = snip.get("thumbnails", {}).get("medium", {}).get("url", "")
+                with grid[gi]:
+                    st.markdown(f"""
+                    <div style='background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1);
+                    border-radius:10px; overflow:hidden; cursor:pointer; transition:all 0.2s;'>
+                        <img src='{thumb}' style='width:100%; aspect-ratio:16/9; object-fit:cover;'/>
+                        <div style='padding:8px 10px;'>
+                            <div style='color:white; font-size:0.82rem; font-weight:600;
+                            white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'>{title}</div>
+                            <div style='color:rgba(255,255,255,0.45); font-size:0.74rem;'>{artist}</div>
+                        </div>
+                    </div>""", unsafe_allow_html=True)
+                    pc1, pc2 = st.columns(2)
+                    with pc1:
+                        if st.button("▶ Play", key=f"{prefix}_play_{vid_id}_{gi}", use_container_width=True):
+                            st.session_state.now_playing_id     = vid_id
+                            st.session_state.now_playing_title  = title
+                            st.session_state.now_playing_artist = artist
+                            st.session_state.now_playing_thumb  = thumb
+                            st.rerun()
+                    with pc2:
+                        if st.button("+ Queue", key=f"{prefix}_q_{vid_id}_{gi}", use_container_width=True):
+                            st.session_state.queue.append({"id": vid_id, "title": title, "artist": artist, "thumb": thumb})
+                            st.toast(f"Added to queue: {title[:25]}")
+
+    # ══ HOME TAB ══════════════════════════════════════════════════════════════
+    with music_tabs[0]:
+        if not HAS_YT_KEY:
+            st.warning("⚠️ Add YOUTUBE_API_KEY to Streamlit secrets to enable music search & trending.")
+            st.code("YOUTUBE_API_KEY = \"YOUR_KEY_HERE\"", language="toml")
+            st.markdown("[Get a free YouTube Data API v3 key →](https://console.cloud.google.com/apis/library/youtube.googleapis.com)", unsafe_allow_html=False)
+        else:
+            st.markdown("<h4 style='color:#ff4444;'>🔥 Trending in India</h4>", unsafe_allow_html=True)
+            if "trending_cache" not in st.session_state:
+                with st.spinner("Loading trending music…"):
+                    st.session_state.trending_cache = youtube_trending(12)
+            render_video_grid(st.session_state.trending_cache, cols=4, prefix="tr")
+
+            if st.button("🔄 Refresh Trending", key="refresh_trending"):
+                if "trending_cache" in st.session_state:
+                    del st.session_state["trending_cache"]
+                st.rerun()
+
+    # ══ SEARCH TAB ════════════════════════════════════════════════════════════
+    with music_tabs[1]:
+        sq1, sq2 = st.columns([4, 1])
+        with sq1:
+            search_q = st.text_input(
+                "", placeholder="🔍 Search songs, artists, albums…",
+                label_visibility="collapsed", key="music_search_box",
+                value=st.session_state.music_search_query
+            )
+        with sq2:
+            search_go = st.button("Search →", use_container_width=True, key="music_search_go")
+
+        # Genre quick-search chips
+        st.markdown("<p style='color:rgba(255,255,255,0.4); font-size:0.8rem;'>Quick search:</p>", unsafe_allow_html=True)
+        genre_cols = st.columns(8)
+        genres = ["Pop", "Hip-Hop", "Lo-fi", "Tamil", "Malayalam", "Bollywood", "K-Pop", "Jazz"]
+        for gi, genre in enumerate(genres):
+            with genre_cols[gi]:
+                if st.button(genre, key=f"genre_{genre}", use_container_width=True):
+                    st.session_state.music_search_query = genre
+                    results = youtube_search(genre, 12)
+                    st.session_state.music_search_results = results
+                    st.rerun()
+
+        if search_go and search_q:
+            st.session_state.music_search_query = search_q
+            with st.spinner("Searching…"):
+                results = youtube_search(search_q, 12)
+                st.session_state.music_search_results = results
+
+        if st.session_state.music_search_results:
+            q_display = st.session_state.music_search_query
+            st.markdown(f"<h4 style='color:#00d4ff;'>Results for {q_display}</h4>", unsafe_allow_html=True)
+            render_video_grid(st.session_state.music_search_results, cols=4, prefix="sr")
+        elif not HAS_YT_KEY:
+            st.warning("⚠️ Add YOUTUBE_API_KEY to Streamlit secrets.")
+        else:
             st.markdown("""
             <div style='text-align:center; padding:60px; color:rgba(255,255,255,0.3);'>
-                <div style='font-size:3rem;'>💬</div>
-                <p>Add friends to start chatting</p>
-            </div>
-            """, unsafe_allow_html=True)
+                <div style='font-size:3rem;'>🎵</div>
+                <p>Search for any song, artist or album</p>
+            </div>""", unsafe_allow_html=True)
+
+    # ══ LIBRARY TAB ═══════════════════════════════════════════════════════════
+    with music_tabs[2]:
+        liked = get_liked_songs(st.session_state.user)
+        st.markdown(f"<h4 style='color:#ff4444;'>❤️ Liked Songs ({len(liked)})</h4>", unsafe_allow_html=True)
+        if not liked:
+            st.markdown("<p style='color:rgba(255,255,255,0.4);'>No liked songs yet. Hit ❤️ on any track.</p>", unsafe_allow_html=True)
         else:
-            fl, cl = st.columns([1, 3])
-            with fl:
-                st.markdown("<p style='color:rgba(255,255,255,0.5); font-size:0.8rem; text-transform:uppercase; letter-spacing:1px;'>Friends</p>", unsafe_allow_html=True)
-                for f in friends:
-                    active_dm = st.session_state.get("msg_target") == f
-                    if st.button(f"{'🟢' if active_dm else '👤'} {f}", use_container_width=True, key=f"dm_{f}"):
-                        st.session_state.msg_target = f
+            for song in liked:
+                lc1, lc2, lc3, lc4 = st.columns([1, 4, 1, 1])
+                with lc1:
+                    if song.get("thumbnail"):
+                        st.image(song["thumbnail"], width=60)
+                with lc2:
+                    st.markdown(f"<div style='color:white; font-weight:600;'>{song['title']}</div>"
+                                f"<div style='color:rgba(255,255,255,0.5); font-size:0.8rem;'>{song['artist']}</div>",
+                                unsafe_allow_html=True)
+                with lc3:
+                    if st.button("▶", key=f"lib_play_{song['video_id']}", use_container_width=True):
+                        st.session_state.now_playing_id     = song["video_id"]
+                        st.session_state.now_playing_title  = song["title"]
+                        st.session_state.now_playing_artist = song["artist"]
+                        st.session_state.now_playing_thumb  = song.get("thumbnail", "")
+                        st.rerun()
+                with lc4:
+                    if st.button("🗑", key=f"lib_del_{song['video_id']}", use_container_width=True):
+                        unlike_song(st.session_state.user, song["video_id"])
+                        st.rerun()
+                st.markdown("<hr style='border-color:rgba(255,255,255,0.06); margin:4px 0;'>", unsafe_allow_html=True)
+
+        # Like currently playing
+        if st.session_state.now_playing_id:
+            st.markdown("---")
+            if st.button(f"❤️ Like current: {st.session_state.now_playing_title[:40]}", use_container_width=True, key="like_current"):
+                like_song(
+                    st.session_state.user,
+                    st.session_state.now_playing_id,
+                    st.session_state.now_playing_title,
+                    st.session_state.now_playing_artist,
+                    st.session_state.now_playing_thumb
+                )
+                st.success("❤️ Liked!")
+                st.rerun()
+
+    # ══ PLAYLISTS TAB ═════════════════════════════════════════════════════════
+    with music_tabs[3]:
+        playlists = get_playlists(st.session_state.user)
+        pl_left, pl_right = st.columns([1, 2])
+
+        with pl_left:
+            st.markdown("<h4 style='color:#7b2fff;'>Your Playlists</h4>", unsafe_allow_html=True)
+            new_pl_name = st.text_input("New playlist name", placeholder="e.g. Chill Vibes", key="new_pl_input")
+            if st.button("➕ Create Playlist", use_container_width=True, key="create_pl"):
+                if new_pl_name.strip():
+                    save_playlist(st.session_state.user, new_pl_name.strip(), [])
+                    st.success(f"Playlist {new_pl_name} created!")
+                    st.rerun()
+
+            st.markdown("---")
+            for pl in playlists:
+                pcol1, pcol2 = st.columns([3, 1])
+                with pcol1:
+                    if st.button(f"📀 {pl['name']}", key=f"open_pl_{pl['name']}", use_container_width=True):
+                        st.session_state.active_playlist_name = pl["name"]
+                        st.rerun()
+                with pcol2:
+                    if st.button("🗑", key=f"del_pl_{pl['name']}", use_container_width=True):
+                        delete_playlist(st.session_state.user, pl["name"])
+                        if st.session_state.active_playlist_name == pl["name"]:
+                            st.session_state.active_playlist_name = None
                         st.rerun()
 
-            with cl:
-                dest = st.session_state.get("msg_target")
-                if dest:
-                    st.markdown(f"<h4 style='color:#00d4ff;'>💬 Chat with {dest}</h4>", unsafe_allow_html=True)
-                    cid = "_".join(sorted([st.session_state.user, dest]))
-                    messages = get_messages(cid)
+        with pl_right:
+            active_pl = st.session_state.active_playlist_name
+            if active_pl:
+                pl_data = next((p for p in playlists if p["name"] == active_pl), None)
+                if pl_data:
+                    songs = pl_data.get("songs", [])
+                    st.markdown(f"<h4 style='color:#00d4ff;'>📀 {active_pl} ({len(songs)} tracks)</h4>", unsafe_allow_html=True)
 
-                    if not messages:
-                        st.markdown(f"<p style='color:rgba(255,255,255,0.3); text-align:center; padding:30px;'>No messages yet. Say hi to {dest}! 👋</p>", unsafe_allow_html=True)
+                    # Add currently playing to playlist
+                    if st.session_state.now_playing_id:
+                        if st.button(f"➕ Add playing track to this playlist", use_container_width=True, key="add_to_pl"):
+                            new_song = {
+                                "id": st.session_state.now_playing_id,
+                                "title": st.session_state.now_playing_title,
+                                "artist": st.session_state.now_playing_artist,
+                                "thumb": st.session_state.now_playing_thumb
+                            }
+                            if not any(s["id"] == new_song["id"] for s in songs):
+                                songs.append(new_song)
+                                save_playlist(st.session_state.user, active_pl, songs)
+                                st.success("✅ Added!")
+                                st.rerun()
+                            else:
+                                st.info("Already in playlist.")
+
+                    if not songs:
+                        st.markdown("<p style='color:rgba(255,255,255,0.4);'>Empty playlist. Play a track and add it here.</p>", unsafe_allow_html=True)
                     else:
-                        for m in messages:
-                            role = "user" if m["sender"] == st.session_state.user else "assistant"
-                            with st.chat_message(role):
-                                ts = m.get("created_at", "")[:16].replace("T", " ") if m.get("created_at") else ""
-                                st.write(m["text"])
-                                if ts:
-                                    st.caption(f"{m['sender']} · {ts}")
+                        # Play all button
+                        if st.button("▶ Play All", use_container_width=True, key="play_all_pl"):
+                            st.session_state.now_playing_id     = songs[0]["id"]
+                            st.session_state.now_playing_title  = songs[0]["title"]
+                            st.session_state.now_playing_artist = songs[0].get("artist", "")
+                            st.session_state.now_playing_thumb  = songs[0].get("thumb", "")
+                            st.session_state.queue = songs[1:]
+                            st.rerun()
 
-                    txt = st.chat_input(f"Message {dest}...")
-                    if txt:
-                        send_message(cid, st.session_state.user, txt)
+                        for i, s in enumerate(songs):
+                            sc1, sc2, sc3, sc4 = st.columns([1, 4, 1, 1])
+                            with sc1:
+                                if s.get("thumb"):
+                                    st.image(s["thumb"], width=50)
+                            with sc2:
+                                st.markdown(f"<div style='color:white;'>{s['title']}</div>"
+                                            f"<div style='color:rgba(255,255,255,0.4); font-size:0.78rem;'>{s.get('artist','')}</div>",
+                                            unsafe_allow_html=True)
+                            with sc3:
+                                if st.button("▶", key=f"pl_play_{i}", use_container_width=True):
+                                    st.session_state.now_playing_id     = s["id"]
+                                    st.session_state.now_playing_title  = s["title"]
+                                    st.session_state.now_playing_artist = s.get("artist", "")
+                                    st.session_state.now_playing_thumb  = s.get("thumb", "")
+                                    st.session_state.queue = songs[i+1:]
+                                    st.rerun()
+                            with sc4:
+                                if st.button("✕", key=f"pl_rm_{i}", use_container_width=True):
+                                    songs.pop(i)
+                                    save_playlist(st.session_state.user, active_pl, songs)
+                                    st.rerun()
+                            st.markdown("<hr style='border-color:rgba(255,255,255,0.05); margin:3px 0;'>", unsafe_allow_html=True)
+            else:
+                st.markdown("""
+                <div style='text-align:center; padding:60px; color:rgba(255,255,255,0.3);'>
+                    <div style='font-size:3rem;'>📀</div>
+                    <p>Select a playlist on the left to view its tracks</p>
+                </div>""", unsafe_allow_html=True)
+
+    # ══ JAM TAB ═══════════════════════════════════════════════════════════════
+    with music_tabs[4]:
+        st.markdown("<h4 style='color:#ff4444;'>🎵 Music Jam — Listen Together</h4>", unsafe_allow_html=True)
+        st.markdown("<p style='color:rgba(255,255,255,0.5);'>Share what you're playing with a friend in real time. They'll get a notification in Messages.</p>", unsafe_allow_html=True)
+
+        if st.session_state.now_playing_id:
+            st.markdown(f"""
+            <div style='background:rgba(255,68,68,0.1); border:1px solid rgba(255,68,68,0.3);
+            border-radius:12px; padding:16px; margin-bottom:16px;'>
+                <div style='color:#ff4444; font-weight:700;'>🎵 Now Playing</div>
+                <div style='color:white; margin-top:6px;'>{st.session_state.now_playing_title}</div>
+                <div style='color:rgba(255,255,255,0.5); font-size:0.8rem;'>{st.session_state.now_playing_artist}</div>
+            </div>""", unsafe_allow_html=True)
+
+            my_friends = get_user(st.session_state.user)
+            friends_to_jam = my_friends.get("friends", []) if my_friends else []
+            if not friends_to_jam:
+                st.info("Add friends first to jam with them.")
+            else:
+                st.markdown("<p style='color:rgba(255,255,255,0.6);'>Share jam with:</p>", unsafe_allow_html=True)
+                jam_cols = st.columns(min(len(friends_to_jam), 4))
+                for ji, f in enumerate(friends_to_jam):
+                    with jam_cols[ji % 4]:
+                        if st.button(f"🎵 Jam with {f}", use_container_width=True, key=f"jam_{f}"):
+                            send_jam(
+                                st.session_state.user, f,
+                                st.session_state.now_playing_id,
+                                st.session_state.now_playing_title,
+                                st.session_state.now_playing_thumb
+                            )
+                            st.success(f"✅ Jam invite sent to {f}! They will see it in Messages.")
+        else:
+            st.markdown("""
+            <div style='text-align:center; padding:60px; color:rgba(255,255,255,0.3);'>
+                <div style='font-size:3rem;'>🎵</div>
+                <p>Play a song first, then come here to jam with friends</p>
+            </div>""", unsafe_allow_html=True)
+
+        # Incoming jam check
+        inc_jam = get_jam(st.session_state.user)
+        if inc_jam:
+            st.markdown("---")
+            st.markdown(f"<h5 style='color:#00ff88;'>📨 {inc_jam['host']} invited you to jam!</h5>", unsafe_allow_html=True)
+            if st.button(f"Play: {inc_jam['title']}", use_container_width=True, key="join_jam_music"):
+                st.session_state.now_playing_id     = inc_jam["video_id"]
+                st.session_state.now_playing_title  = inc_jam["title"]
+                st.session_state.now_playing_thumb  = inc_jam["thumbnail"]
+                st.session_state.now_playing_artist = inc_jam["host"]
+                st.rerun()
+
+    # ══ QUEUE TAB ═════════════════════════════════════════════════════════════
+    with music_tabs[5]:
+        st.markdown("<h4 style='color:#ffa500;'>📋 Queue</h4>", unsafe_allow_html=True)
+        if not st.session_state.queue:
+            st.markdown("<p style='color:rgba(255,255,255,0.4);'>Your queue is empty. Hit + Queue on any track.</p>", unsafe_allow_html=True)
+        else:
+            for qi, track in enumerate(st.session_state.queue):
+                qc1, qc2, qc3, qc4 = st.columns([1, 4, 1, 1])
+                with qc1:
+                    st.markdown(f"<div style='color:rgba(255,255,255,0.3); text-align:center; padding-top:10px;'>{qi+1}</div>", unsafe_allow_html=True)
+                    if track.get("thumb"):
+                        st.image(track["thumb"], width=50)
+                with qc2:
+                    st.markdown(f"<div style='color:white;'>{track['title']}</div>"
+                                f"<div style='color:rgba(255,255,255,0.4); font-size:0.78rem;'>{track.get('artist','')}</div>",
+                                unsafe_allow_html=True)
+                with qc3:
+                    if st.button("▶ Play Now", key=f"q_play_{qi}", use_container_width=True):
+                        st.session_state.now_playing_id     = track["id"]
+                        st.session_state.now_playing_title  = track["title"]
+                        st.session_state.now_playing_artist = track.get("artist", "")
+                        st.session_state.now_playing_thumb  = track.get("thumb", "")
+                        st.session_state.queue.pop(qi)
                         st.rerun()
-                else:
-                    st.markdown("<p style='color:rgba(255,255,255,0.3); text-align:center; padding:60px;'>← Select a friend to chat</p>", unsafe_allow_html=True)
+                with qc4:
+                    if st.button("✕", key=f"q_rm_{qi}", use_container_width=True):
+                        st.session_state.queue.pop(qi)
+                        st.rerun()
+                st.markdown("<hr style='border-color:rgba(255,255,255,0.06); margin:3px 0;'>", unsafe_allow_html=True)
 
+            if st.button("🗑 Clear Queue", key="clear_queue"):
+                st.session_state.queue = []
+                st.rerun()
 
 # ─────────────────────────────────────────
 # 12. WEATHER PAGE — GPS only + Charts
