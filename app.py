@@ -27,14 +27,772 @@ except ImportError:
 st.set_page_config(page_title="Lakshmeeyam AI", page_icon="🚀", layout="wide")
 
 # ── Google Analytics 4 via streamlit-analytics2 ───────────────────────────────
-# Injects GA4 into the real page <head> (not an iframe) so Google detects it.
-# Add to requirements.txt: streamlit-analytics2
 try:
     import streamlit_analytics2 as streamlit_analytics
     streamlit_analytics.start_tracking(
         ga4_id="G-98JQK90KWX",
         verbose=False,
         unsafe_password=""
+    )
+    _ANALYTICS_OK = True
+except Exception:
+    _ANALYTICS_OK = False
+# ──────────────────────────────────────────────────────────────────────────────
+
+# ── Theme init (must be before CSS render) ───────────────────────────────────
+if "theme" not in st.session_state:
+    st.session_state.theme = "dark"
+_DARK = st.session_state.theme == "dark"
+
+# CSS variables resolved by Python so the markdown block stays static
+_T = {
+    "bg"       : "#0a0a1a" if _DARK else "#ffffff",
+    "bg2"      : "#0d1b2a" if _DARK else "#f8f8f8",
+    "sidebar"  : "rgba(5,10,25,0.97)" if _DARK else "#f0f0f0",
+    "card"     : "rgba(255,255,255,0.04)" if _DARK else "rgba(0,0,0,0.04)",
+    "card_b"   : "rgba(0,212,255,0.25)" if _DARK else "rgba(0,0,0,0.12)",
+    "txt"      : "#ffffff" if _DARK else "#111111",
+    "txt2"     : "rgba(255,255,255,0.55)" if _DARK else "rgba(0,0,0,0.55)",
+    "txt3"     : "rgba(255,255,255,0.3)"  if _DARK else "rgba(0,0,0,0.3)",
+    "accent"   : "#00d4ff",
+    "accent2"  : "#7b2fff",
+    "red"      : "#ff4444",
+    "green"    : "#00ff88",
+    "inp_bg"   : "rgba(0,0,0,0.45)" if _DARK else "#ffffff",
+    "inp_txt"  : "#ffffff" if _DARK else "#111111",
+    "inp_b"    : "rgba(0,212,255,0.3)" if _DARK else "rgba(0,0,0,0.2)",
+    "tab_bg"   : "rgba(0,212,255,0.05)" if _DARK else "rgba(0,0,0,0.05)",
+    "tab_sel"  : "rgba(0,212,255,0.18)" if _DARK else "rgba(0,0,0,0.12)",
+    "weather_bg": "linear-gradient(135deg,rgba(0,100,200,0.2),rgba(0,50,100,0.3))" if _DARK else "linear-gradient(135deg,#e8f4ff,#c8e8ff)",
+    "weather_txt": "white" if _DARK else "#003366",
+    "ytm_bg"   : "#0f0f0f" if _DARK else "#ffffff",
+    "ytm_card" : "#1a1a1a" if _DARK else "#f2f2f2",
+    "ytm_card2": "#212121" if _DARK else "#e8e8e8",
+    "ytm_txt"  : "#ffffff" if _DARK else "#030303",
+    "ytm_txt2" : "#aaaaaa" if _DARK else "#606060",
+    "ytm_red"  : "#ff0000",
+    "ytm_bar"  : "#1f1f1f" if _DARK else "#f8f8f8",
+}
+
+st.markdown(f"""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Rajdhani:wght@400;600&family=Roboto:wght@300;400;500;700&display=swap');
+
+/* ═══════════════════════════════════════════════════════════════════
+   GLOBAL RESET & BASE STYLES
+   ═══════════════════════════════════════════════════════════════════ */
+* {{
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}}
+
+html, body, [class*="css"] {{ 
+    font-family: "Rajdhani", sans-serif;
+    overflow-x: hidden;
+}}
+
+/* ═══════════════════════════════════════════════════════════════════
+   ANIMATED GRADIENT BACKGROUND
+   ═══════════════════════════════════════════════════════════════════ */
+.stApp {{
+    background: linear-gradient(135deg, 
+        {"#0a0a1a 0%, #1a0a2e 25%, #16213e 50%, #0f3460 75%, #0a0a1a 100%" if _DARK else 
+         "#e8f4ff 0%, #c8e8ff 25%, #a8d8ff 50%, #88c8ff 75%, #e8f4ff 100%"});
+    background-size: 400% 400%;
+    animation: gradientFlow 15s ease infinite;
+    min-height: 100vh;
+    position: relative;
+}}
+
+/* Floating orbs for depth */
+.stApp::before {{
+    content: '';
+    position: fixed;
+    width: 600px;
+    height: 600px;
+    background: radial-gradient(circle, 
+        {"rgba(0, 212, 255, 0.15)" if _DARK else "rgba(0, 100, 255, 0.1)"}, 
+        transparent 70%);
+    border-radius: 50%;
+    top: -200px;
+    right: -200px;
+    animation: float 20s ease-in-out infinite;
+    pointer-events: none;
+    z-index: 0;
+}}
+
+.stApp::after {{
+    content: '';
+    position: fixed;
+    width: 500px;
+    height: 500px;
+    background: radial-gradient(circle, 
+        {"rgba(123, 47, 255, 0.12)" if _DARK else "rgba(123, 47, 255, 0.08)"}, 
+        transparent 70%);
+    border-radius: 50%;
+    bottom: -150px;
+    left: -150px;
+    animation: float 25s ease-in-out infinite reverse;
+    pointer-events: none;
+    z-index: 0;
+}}
+
+@keyframes gradientFlow {{
+    0%, 100% {{ background-position: 0% 50%; }}
+    50% {{ background-position: 100% 50%; }}
+}}
+
+@keyframes float {{
+    0%, 100% {{ transform: translate(0, 0) rotate(0deg); }}
+    33% {{ transform: translate(30px, -30px) rotate(120deg); }}
+    66% {{ transform: translate(-20px, 20px) rotate(240deg); }}
+}}
+
+/* ═══════════════════════════════════════════════════════════════════
+   LIQUID GLASS CARDS (Main Component)
+   ═══════════════════════════════════════════════════════════════════ */
+.main-box {{
+    background: {"linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03))" if _DARK else 
+                 "linear-gradient(135deg, rgba(255,255,255,0.85), rgba(255,255,255,0.6))"};
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    padding: 28px;
+    border-radius: 24px;
+    border: 1px solid {"rgba(255, 255, 255, 0.18)" if _DARK else "rgba(0, 0, 0, 0.08)"};
+    box-shadow: 
+        0 8px 32px 0 {"rgba(0, 0, 0, 0.37)" if _DARK else "rgba(31, 38, 135, 0.15)"},
+        inset 0 1px 0 0 {"rgba(255, 255, 255, 0.15)" if _DARK else "rgba(255, 255, 255, 0.8)"};
+    color: {_T["txt"]};
+    margin-bottom: 24px;
+    position: relative;
+    z-index: 1;
+    overflow: hidden;
+}}
+
+.main-box::before {{
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(
+        90deg,
+        transparent,
+        {"rgba(255, 255, 255, 0.1)" if _DARK else "rgba(255, 255, 255, 0.4)"},
+        transparent
+    );
+    transition: left 0.5s;
+}}
+
+.main-box:hover::before {{
+    left: 100%;
+}}
+
+.main-box:hover {{
+    transform: translateY(-4px);
+    box-shadow: 
+        0 12px 48px 0 {"rgba(0, 212, 255, 0.3)" if _DARK else "rgba(0, 100, 255, 0.2)"},
+        inset 0 1px 0 0 {"rgba(255, 255, 255, 0.25)" if _DARK else "rgba(255, 255, 255, 1)"};
+    border-color: {"rgba(0, 212, 255, 0.4)" if _DARK else "rgba(0, 150, 255, 0.3)"};
+}}
+
+/* ═══════════════════════════════════════════════════════════════════
+   HERO TITLE WITH SHIMMER
+   ═══════════════════════════════════════════════════════════════════ */
+.hero-title {{
+    font-family: "Orbitron", sans-serif;
+    font-size: 3.5rem;
+    font-weight: 700;
+    background: linear-gradient(
+        90deg, 
+        #00d4ff 0%, 
+        #7b2fff 25%, 
+        #00ff88 50%, 
+        #7b2fff 75%, 
+        #00d4ff 100%
+    );
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    text-align: center;
+    animation: shimmer 4s linear infinite;
+    margin-bottom: 0.5rem;
+    text-shadow: 0 0 40px {"rgba(0, 212, 255, 0.5)" if _DARK else "rgba(0, 100, 255, 0.3)"};
+    letter-spacing: 2px;
+}}
+
+.hero-sub {{
+    text-align: center;
+    color: {"rgba(0, 212, 255, 0.7)" if _DARK else "rgba(0, 100, 200, 0.8)"};
+    font-size: 1.1rem;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    margin-bottom: 2.5rem;
+    font-weight: 600;
+}}
+
+@keyframes shimmer {{ 
+    0% {{ background-position: 0% 50%; }}
+    100% {{ background-position: 200% 50%; }}
+}}
+
+/* ═══════════════════════════════════════════════════════════════════
+   GLASS BUTTONS — iOS Style
+   ═══════════════════════════════════════════════════════════════════ */
+.stButton > button {{
+    background: {"linear-gradient(135deg, rgba(0,212,255,0.15), rgba(123,47,255,0.15))" if _DARK else 
+                 "linear-gradient(135deg, rgba(255,255,255,0.9), rgba(255,255,255,0.7))"};
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    color: {"#00d4ff" if _DARK else "#0066cc"};
+    border: 1px solid {"rgba(0,212,255,0.4)" if _DARK else "rgba(0,100,200,0.3)"};
+    border-radius: 12px;
+    font-family: "Rajdhani", sans-serif;
+    font-weight: 600;
+    letter-spacing: 1px;
+    padding: 12px 24px;
+    box-shadow: 
+        0 4px 16px {"rgba(0, 212, 255, 0.2)" if _DARK else "rgba(0, 100, 200, 0.15)"},
+        inset 0 1px 0 {"rgba(255,255,255,0.2)" if _DARK else "rgba(255,255,255,0.8)"};
+    position: relative;
+    overflow: hidden;
+}}
+
+.stButton > button::before {{
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    border-radius: 50%;
+    background: {"rgba(0, 212, 255, 0.4)" if _DARK else "rgba(0, 150, 255, 0.3)"};
+    transform: translate(-50%, -50%);
+    transition: width 0.6s, height 0.6s;
+}}
+
+.stButton > button:hover::before {{
+    width: 300px;
+    height: 300px;
+}}
+
+.stButton > button:hover {{
+    background: {"linear-gradient(135deg, rgba(0,212,255,0.3), rgba(123,47,255,0.3))" if _DARK else 
+                 "linear-gradient(135deg, rgba(255,255,255,1), rgba(230,240,255,0.9))"};
+    border-color: {"#00d4ff" if _DARK else "#0080ff"};
+    box-shadow: 
+        0 8px 32px {"rgba(0, 212, 255, 0.4)" if _DARK else "rgba(0, 150, 255, 0.3)"},
+        0 0 0 2px {"rgba(0, 212, 255, 0.2)" if _DARK else "rgba(0, 150, 255, 0.2)"};
+    transform: translateY(-2px) scale(1.02);
+}}
+
+.stButton > button:active {{
+    transform: translateY(0) scale(0.98);
+}}
+
+/* ═══════════════════════════════════════════════════════════════════
+   GLASS INPUT FIELDS
+   ═══════════════════════════════════════════════════════════════════ */
+.stTextInput > div > div > input,
+.stTextArea > div > div > textarea,
+.stSelectbox > div > div > div {{
+    background: {"rgba(0, 0, 0, 0.3)" if _DARK else "rgba(255, 255, 255, 0.7)"} !important;
+    backdrop-filter: blur(10px) !important;
+    -webkit-backdrop-filter: blur(10px) !important;
+    color: {_T["inp_txt"]} !important;
+    border: 1px solid {"rgba(0, 212, 255, 0.3)" if _DARK else "rgba(0, 100, 200, 0.25)"} !important;
+    border-radius: 12px !important;
+    box-shadow: 
+        inset 0 2px 4px {"rgba(0,0,0,0.2)" if _DARK else "rgba(0,0,0,0.05)"} !important;
+    padding: 12px 16px !important;
+    font-size: 0.95rem !important;
+}}
+
+.stTextInput > div > div > input:focus,
+.stTextArea > div > div > textarea:focus {{
+    border-color: {"#00d4ff" if _DARK else "#0080ff"} !important;
+    box-shadow: 
+        0 0 0 3px {"rgba(0, 212, 255, 0.2)" if _DARK else "rgba(0, 150, 255, 0.15)"} !important,
+        inset 0 2px 4px {"rgba(0,0,0,0.2)" if _DARK else "rgba(0,0,0,0.05)"} !important;
+}}
+
+/* ═══════════════════════════════════════════════════════════════════
+   GLASS TABS
+   ═══════════════════════════════════════════════════════════════════ */
+.stTabs [data-baseweb="tab-list"] {{ 
+    gap: 8px; 
+    background: {"rgba(0, 0, 0, 0.2)" if _DARK else "rgba(255, 255, 255, 0.4)"};
+    backdrop-filter: blur(10px);
+    padding: 8px;
+    border-radius: 16px;
+    border: 1px solid {"rgba(255,255,255,0.1)" if _DARK else "rgba(0,0,0,0.05)"};
+}}
+
+.stTabs [data-baseweb="tab"] {{
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    color: {_T["txt2"]};
+    font-family: "Rajdhani", sans-serif;
+    font-weight: 600;
+    padding: 10px 20px;
+}}
+
+.stTabs [data-baseweb="tab"]:hover {{
+    background: {"rgba(255,255,255,0.05)" if _DARK else "rgba(255,255,255,0.6)"};
+    border-color: {"rgba(0,212,255,0.3)" if _DARK else "rgba(0,100,200,0.2)"};
+}}
+
+.stTabs [aria-selected="true"] {{
+    background: {"linear-gradient(135deg, rgba(0,212,255,0.2), rgba(123,47,255,0.2))" if _DARK else 
+                 "linear-gradient(135deg, rgba(255,255,255,0.9), rgba(230,240,255,0.9))"} !important;
+    border: 1px solid {"#00d4ff" if _DARK else "#0080ff"} !important;
+    color: {"#00d4ff" if _DARK else "#0066cc"} !important;
+    box-shadow: 
+        0 4px 12px {"rgba(0, 212, 255, 0.3)" if _DARK else "rgba(0, 150, 255, 0.2)"},
+        inset 0 1px 0 {"rgba(255,255,255,0.2)" if _DARK else "rgba(255,255,255,0.8)"};
+}}
+
+/* ═══════════════════════════════════════════════════════════════════
+   GLASS SIDEBAR
+   ═══════════════════════════════════════════════════════════════════ */
+[data-testid="stSidebar"] {{
+    background: {"linear-gradient(180deg, rgba(5,10,25,0.95), rgba(10,15,35,0.98))" if _DARK else 
+                 "linear-gradient(180deg, rgba(255,255,255,0.85), rgba(240,248,255,0.9))"} !important;
+    backdrop-filter: blur(20px) saturate(150%) !important;
+    -webkit-backdrop-filter: blur(20px) saturate(150%) !important;
+    border-right: 1px solid {"rgba(0, 212, 255, 0.2)" if _DARK else "rgba(0, 100, 200, 0.15)"} !important;
+    box-shadow: 4px 0 24px {"rgba(0,0,0,0.3)" if _DARK else "rgba(0,0,0,0.05)"};
+}}
+
+.sidebar-logo {{
+    font-family: "Orbitron", sans-serif;
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: {"#00d4ff" if _DARK else "#0066cc"};
+    text-align: center;
+    padding: 14px;
+    background: {"rgba(0, 212, 255, 0.1)" if _DARK else "rgba(0, 150, 255, 0.08)"};
+    backdrop-filter: blur(10px);
+    border: 1px solid {"rgba(0, 212, 255, 0.3)" if _DARK else "rgba(0, 100, 200, 0.2)"};
+    border-radius: 12px;
+    margin-bottom: 18px;
+    box-shadow: 
+        0 4px 16px {"rgba(0, 212, 255, 0.2)" if _DARK else "rgba(0, 100, 200, 0.1)"},
+        inset 0 1px 0 {"rgba(255,255,255,0.2)" if _DARK else "rgba(255,255,255,0.6)"};
+}}
+
+/* ═══════════════════════════════════════════════════════════════════
+   WEATHER CARD — Enhanced Glass
+   ═══════════════════════════════════════════════════════════════════ */
+.weather-card {{
+    background: {"linear-gradient(135deg, rgba(0,100,200,0.25), rgba(0,50,150,0.35))" if _DARK else 
+                 "linear-gradient(135deg, rgba(255,255,255,0.9), rgba(230,245,255,0.95))"};
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid {"rgba(0,150,255,0.4)" if _DARK else "rgba(0,100,200,0.25)"};
+    border-radius: 24px;
+    padding: 36px;
+    text-align: center;
+    color: {_T["weather_txt"]};
+    box-shadow: 
+        0 8px 32px {"rgba(0,100,200,0.3)" if _DARK else "rgba(0,100,200,0.15)"},
+        inset 0 1px 0 {"rgba(255,255,255,0.2)" if _DARK else "rgba(255,255,255,0.8)"};
+    position: relative;
+    overflow: hidden;
+}}
+
+.weather-card::before {{
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle, 
+        {"rgba(0,212,255,0.1)" if _DARK else "rgba(0,150,255,0.08)"}, 
+        transparent 70%);
+    animation: weatherPulse 8s ease-in-out infinite;
+}}
+
+@keyframes weatherPulse {{
+    0%, 100% {{ transform: scale(1) rotate(0deg); opacity: 0.5; }}
+    50% {{ transform: scale(1.2) rotate(180deg); opacity: 0.8; }}
+}}
+
+/* ═══════════════════════════════════════════════════════════════════
+   MESSAGING BUBBLES — Glass Style
+   ═══════════════════════════════════════════════════════════════════ */
+.msg-bubble-me {{
+    background: {"linear-gradient(135deg, rgba(123,47,255,0.25), rgba(123,47,255,0.15))" if _DARK else 
+                 "linear-gradient(135deg, rgba(220,230,255,0.9), rgba(200,220,255,0.8))"};
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid {"rgba(123,47,255,0.4)" if _DARK else "rgba(100,150,255,0.3)"};
+    border-radius: 18px 18px 4px 18px;
+    padding: 12px 16px;
+    max-width: 70%;
+    margin-left: auto;
+    margin-bottom: 8px;
+    color: {"white" if _DARK else "#1a1a3e"};
+    font-size: 0.95rem;
+    box-shadow: 
+        0 4px 12px {"rgba(123,47,255,0.2)" if _DARK else "rgba(100,150,255,0.15)"},
+        inset 0 1px 0 {"rgba(255,255,255,0.15)" if _DARK else "rgba(255,255,255,0.6)"};
+}}
+
+.msg-bubble-them {{
+    background: {"rgba(20,30,50,0.8)" if _DARK else "rgba(255,255,255,0.85)"};
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid {"rgba(0,212,255,0.25)" if _DARK else "rgba(0,100,200,0.2)"};
+    border-radius: 18px 18px 18px 4px;
+    padding: 12px 16px;
+    max-width: 70%;
+    margin-right: auto;
+    margin-bottom: 8px;
+    color: {_T["txt"]};
+    font-size: 0.95rem;
+    box-shadow: 
+        0 4px 12px {"rgba(0,0,0,0.2)" if _DARK else "rgba(0,100,200,0.1)"},
+        inset 0 1px 0 {"rgba(255,255,255,0.1)" if _DARK else "rgba(255,255,255,0.8)"};
+}}
+
+.msg-ts {{
+    font-size: 0.68rem;
+    color: {_T["txt3"]};
+    margin-top: 3px;
+}}
+
+.conv-item {{
+    background: {_T["card"]};
+    border: 1px solid {_T["card_b"]};
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-bottom: 6px;
+    cursor: pointer;
+    transition: background 0.2s;
+}}
+
+.conv-item:hover {{ background: rgba(0,212,255,0.08); }}
+.conv-item.active {{ border-color: {_T["accent"]}; background: rgba(0,212,255,0.1); }}
+
+.req-card {{
+    background: {"rgba(123,47,255,0.08)" if _DARK else "rgba(123,47,255,0.06)"};
+    border: 1px solid rgba(123,47,255,0.3);
+    border-radius: 10px;
+    padding: 12px 16px;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}}
+
+/* ═══════════════════════════════════════════════════════════════════
+   YOUTUBE MUSIC UI STYLES
+   ═══════════════════════════════════════════════════════════════════ */
+.ytm-page {{
+    background: {_T["ytm_bg"]};
+    min-height: 100vh;
+    font-family: "Roboto", sans-serif;
+    color: {_T["ytm_txt"]};
+    padding: 0;
+}}
+
+.ytm-header {{
+    background: {_T["ytm_bar"]};
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}}
+
+.ytm-logo {{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    font-size: 1.1rem;
+    color: {_T["ytm_txt"]};
+    text-decoration: none;
+}}
+
+.ytm-logo-icon {{
+    width: 36px; height: 36px;
+    background: {_T["ytm_red"]};
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.2rem;
+}}
+
+.ytm-chip-row {{
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+}}
+
+.ytm-chip {{
+    background: {_T["ytm_card2"]};
+    color: {_T["ytm_txt"]};
+    border: none;
+    border-radius: 20px;
+    padding: 6px 16px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    font-family: "Roboto", sans-serif;
+    transition: background 0.2s;
+}}
+
+.ytm-chip:hover {{ background: #333; }}
+.ytm-chip.active {{ background: {_T["ytm_txt"]}; color: {_T["ytm_bg"]}; }}
+
+.ytm-card {{
+    background: {_T["ytm_card"]};
+    border-radius: 8px;
+    overflow: hidden;
+    transition: background 0.2s;
+    cursor: pointer;
+}}
+
+.ytm-card:hover {{ background: {_T["ytm_card2"]}; }}
+
+.ytm-thumb {{
+    width: 100%;
+    aspect-ratio: 16/9;
+    object-fit: cover;
+    display: block;
+}}
+
+.ytm-card-info {{
+    padding: 8px 10px 12px;
+}}
+
+.ytm-card-title {{
+    color: {_T["ytm_txt"]};
+    font-size: 0.85rem;
+    font-weight: 500;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    line-height: 1.3;
+    margin-bottom: 4px;
+}}
+
+.ytm-card-sub {{
+    color: {_T["ytm_txt2"]};
+    font-size: 0.75rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}}
+
+.ytm-section-title {{
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: {_T["ytm_txt"]};
+    margin: 20px 0 12px;
+    font-family: "Roboto", sans-serif;
+}}
+
+.ytm-now-playing {{
+    background: {_T["ytm_bar"]};
+    border-top: 1px solid rgba(255,255,255,0.08);
+    padding: 10px 20px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    border-radius: 12px;
+    margin-bottom: 16px;
+}}
+
+.ytm-np-thumb {{
+    width: 52px; height: 52px;
+    border-radius: 6px;
+    object-fit: cover;
+    flex-shrink: 0;
+}}
+
+.ytm-np-info {{ flex: 1; min-width: 0; }}
+
+.ytm-np-title {{
+    color: {_T["ytm_txt"]};
+    font-weight: 600;
+    font-size: 0.9rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}}
+
+.ytm-np-artist {{
+    color: {_T["ytm_txt2"]};
+    font-size: 0.78rem;
+}}
+
+.ytm-np-badge {{
+    background: {_T["ytm_red"]};
+    color: white;
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 20px;
+    letter-spacing: 0.5px;
+    flex-shrink: 0;
+}}
+
+.ytm-play-btn {{
+    background: {_T["ytm_red"]} !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 20px !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.5px !important;
+}}
+
+.ytm-play-btn:hover {{
+    background: #cc0000 !important;
+    box-shadow: 0 4px 16px rgba(255,0,0,0.4) !important;
+    transform: translateY(-1px) !important;
+}}
+
+.ytm-queue-btn {{
+    background: transparent !important;
+    color: {_T["ytm_txt2"]} !important;
+    border: 1px solid rgba(255,255,255,0.15) !important;
+    border-radius: 20px !important;
+}}
+
+.ytm-search-bar input {{
+    background: {_T["ytm_card"]} !important;
+    color: {_T["ytm_txt"]} !important;
+    border: 1px solid rgba(255,255,255,0.15) !important;
+    border-radius: 24px !important;
+    padding: 10px 18px !important;
+    font-family: "Roboto", sans-serif !important;
+}}
+
+.ytm-pill {{
+    display: inline-block;
+    background: {_T["ytm_card2"]};
+    color: {_T["ytm_txt"]};
+    border-radius: 20px;
+    padding: 5px 14px;
+    font-size: 0.82rem;
+    margin: 3px;
+    cursor: pointer;
+    border: 1px solid rgba(255,255,255,0.1);
+}}
+
+.ytm-playlist-row {{
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: {_T["ytm_card"]};
+    margin-bottom: 6px;
+    cursor: pointer;
+    transition: background 0.2s;
+}}
+
+.ytm-playlist-row:hover {{ background: {_T["ytm_card2"]}; }}
+
+.ytm-playlist-thumb {{
+    width: 48px; height: 48px;
+    border-radius: 4px;
+    object-fit: cover;
+    flex-shrink: 0;
+    background: #333;
+}}
+
+.ytm-track-row {{
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    transition: background 0.15s;
+    cursor: pointer;
+}}
+
+.ytm-track-row:hover {{ background: {_T["ytm_card2"]}; }}
+
+/* ═══════════════════════════════════════════════════════════════════
+   MISC UTILITIES
+   ═══════════════════════════════════════════════════════════════════ */
+.online-dot {{
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    background: #00ff88;
+    border-radius: 50%;
+    margin-right: 6px;
+    animation: pulse 2s ease-in-out infinite;
+    box-shadow: 0 0 8px #00ff88;
+}}
+
+@keyframes pulse {{
+    0%, 100% {{ opacity: 1; transform: scale(1); }}
+    50% {{ opacity: 0.4; transform: scale(1.2); }}
+}}
+
+.stAppDeployButton {{ display: none !important; }}
+#MainMenu {{ visibility: hidden; }}
+footer {{ visibility: hidden; }}
+
+/* Smooth page transitions */
+.element-container {{
+    animation: fadeIn 0.5s ease-in-out;
+}}
+
+@keyframes fadeIn {{
+    from {{ opacity: 0; transform: translateY(10px); }}
+    to {{ opacity: 1; transform: translateY(0); }}
+}}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {{
+    width: 10px;
+    height: 10px;
+}}
+
+::-webkit-scrollbar-track {{
+    background: {"rgba(0,0,0,0.2)" if _DARK else "rgba(0,0,0,0.05)"};
+    border-radius: 10px;
+}}
+
+::-webkit-scrollbar-thumb {{
+    background: {"linear-gradient(180deg, #00d4ff, #7b2fff)" if _DARK else 
+                 "linear-gradient(180deg, #80c0ff, #a080ff)"};
+    border-radius: 10px;
+    border: 2px solid {"rgba(0,0,0,0.2)" if _DARK else "rgba(255,255,255,0.5)"};
+}}
+
+::-webkit-scrollbar-thumb:hover {{
+    background: {"linear-gradient(180deg, #00e4ff, #8b3fff)" if _DARK else 
+                 "linear-gradient(180deg, #60a0ff, #8060ff)"};
+}}
+</style>
+""", unsafe_allow_html=True)
+
+
+# ─────────────────────────────────────────
+# 2. SUPABASE CONNECTION
+# ─────────────────────────────────────────
+try:
+    SUPABASE_URL = st.secrets["SUPABASE_URL"]
+    SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+except Exception as e:
+    st.error("❌ Could not connect to database. Please check your Supabase secrets.")
+    st.code(str(e))        unsafe_password=""
     )
     _ANALYTICS_OK = True
 except Exception:
